@@ -9,12 +9,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-from data_loaders.helper import convert_map_to_lane_map, convert_map_to_road_map
-from constants import (CAM_NAMES, 
+from ssl_project.data_loaders.helper import convert_map_to_lane_map, convert_map_to_road_map
+from ssl_project.constants import (CAM_NAMES, 
     LABELED_SCENE_INDEX, UNLABELED_SCENE_INDEX,
     NUM_SAMPLE_PER_SCENE, NUM_IMAGE_PER_SAMPLE)
 
-from paths import PATH_TO_DATA, PATH_TO_ANNOTATION
+from ssl_project.paths import PATH_TO_DATA, PATH_TO_ANNOTATION
 
 TRANSFORM = torchvision.transforms.ToTensor()
 

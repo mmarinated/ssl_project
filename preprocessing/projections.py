@@ -3,10 +3,11 @@ utility functions to project from 2d plane to another
 """
 
 import numpy as np
-from utils import to_np
+from ssl_project.utils import to_np
 from sklearn.linear_model import LinearRegression
 from scipy.spatial import Delaunay
-from preprocessing import projections
+from ssl_project.preprocessing import projections
+from paths import PATH_TO_REPO
 
 from constants import IDX_TO_ANGLE, PHOTO_H, PHOTO_W, VIEW_ANGLE
 
@@ -64,7 +65,7 @@ class ProjectionPlane:
     """
     # image # 57 in labeled_dataset
     >>> proj_plane = ProjectionPlane(1.7, 70, IDX_TO_ANGLE[1])
-    >>> cars_n  = np.load("ssl_project/tests/cars.npy")
+    >>> cars_n  = np.load(f"{PATH_TO_REPO}/tests/cars.npy")
     >>> valid_n = proj_plane.is_valid(cars_n)
     >>> yz_k42  = proj_plane(cars_n[valid_n])
     >>> yz_k42[0]
@@ -144,10 +145,13 @@ class ProjectionPlane:
 
     def _get_bounding_box_helper(self, xy_42, height):
         yz_42 = np.zeros((4, 2)) # (y, z)
+        func = projection_func(
+            np.array(self._view_point),
+            np.array(self._point_in_projection_plane), 
+            np.array(self._norm_vector_to_plane))
+
         for idx, (x_topdown, y_topdown) in enumerate(xy_42):
-            rot_x, rot_y, yz_42[idx][1] = _isect_line_plane_v3(
-                self._view_point, (x_topdown, y_topdown, height), 
-                self._point_in_projection_plane, self._norm_vector_to_plane)
+            rot_x, rot_y, yz_42[idx][1] = func(np.array([x_topdown, y_topdown, height])[None])[0]
             
             rot_x -= self.x_shift
             x, yz_42[idx][0] = _rotate((rot_x, rot_y), -self.rotation_angle)
@@ -175,6 +179,13 @@ class ProjectionPlane:
 
         for (y, z) in yz_42:
              is_valid &= self._is_visible(y, z)   
+
+
+        # at_least_one_visible = False
+        # for (y, z) in yz_42:
+        #      at_least_one_visible |= self._is_visible(y, z)   
+
+        # is_valid &= at_least_one_visible
 
         return is_valid
 
@@ -204,70 +215,18 @@ def _rotate(point, angle):
     qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
     return qx, qy
 
-def _isect_line_plane_v3(p0, p1, p_co, p_no, epsilon=1e-6):
-    """
-    p0, p1: Define the line.
-    p_co, p_no: define the plane:
-        p_co Is a point on the plane (plane coordinate).
-        p_no Is a normal vector defining the plane direction;
-             (does not need to be normalized).
 
-    Return a Vector or None (when the intersection can't be found).
-    """
-    # generic math functions
-    # ----------------------
+class projection_func:
+    def __init__(self, view_3, in_plane_3, orth_3):
+        self.view_3 = view_3
+        self.in_plane_3 = in_plane_3
+        self.orth_3 = orth_3
+        self.coef = -np.dot(orth_3, view_3 -  in_plane_3)
 
-    def add_v3v3(v0, v1):
-        return (
-            v0[0] + v1[0],
-            v0[1] + v1[1],
-            v0[2] + v1[2],
-            )
+    def __call__(self, p_n3):
+        diff_n3 = p_n3 - self.view_3
+        dot_n   = diff_n3.dot(self.orth_3)
+        assert dot_n.ndim == 1
+        diff_n3  *= (self.coef / dot_n)[:, None]
 
-
-    def sub_v3v3(v0, v1):
-        return (
-            v0[0] - v1[0],
-            v0[1] - v1[1],
-            v0[2] - v1[2],
-            )
-
-
-    def dot_v3v3(v0, v1):
-        return (
-            (v0[0] * v1[0]) +
-            (v0[1] * v1[1]) +
-            (v0[2] * v1[2])
-            )
-
-
-    def len_squared_v3(v0):
-        return dot_v3v3(v0, v0)
-
-
-    def mul_v3_fl(v0, f):
-        return (
-            v0[0] * f,
-            v0[1] * f,
-            v0[2] * f,
-
-        )
-    # ----------------------
-
-    u = sub_v3v3(p1, p0)
-    dot = dot_v3v3(p_no, u)
-
-    if abs(dot) > epsilon:
-        # The factor of the point between p0 -> p1 (0 - 1)
-        # if 'fac' is between (0 - 1) the point intersects with the segment.
-        # Otherwise:
-        #  < 0.0: behind p0.
-        #  > 1.0: infront of p1.
-        w = sub_v3v3(p0, p_co)
-        fac = -dot_v3v3(p_no, w) / dot
-        u = mul_v3_fl(u, fac)
-        return add_v3v3(p0, u)
-    else:
-        # The segment is parallel to plane.
-        return None
-
+        return self.view_3 + diff_n3
