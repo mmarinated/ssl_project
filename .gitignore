@@ -1,4 +1,7 @@
 *trash*
+*.pth
+*tmp*
+*.jpg
 
 # data
 data/
