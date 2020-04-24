@@ -10,6 +10,18 @@ IDX_TO_ANGLE = dict(enumerate(CAM_ANGLE))
 
 VIEW_ANGLE = 70
 
+CATEGORY_TO_IDX = {
+    'other_vehicle': 0,
+    'bicycle': 1,
+    'car': 2,
+    'pedestrian': 3,
+    'truck': 4,
+    'bus': 5,
+    'motorcycle': 6,
+    'emergency_vehicle': 7,
+    'animal': 8,
+}
+
 NUM_SAMPLE_PER_SCENE = 126
 NUM_IMAGE_PER_SAMPLE = 6
 
