@@ -3,6 +3,7 @@ import numpy as np
 
 PHOTO_H = 256
 PHOTO_W = 306
+EGO_IMAGE_SIZE = 800
 
 CAM_NAMES = ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT"]
 CAM_ANGLE = [60,                    0,             -60,           120,            180,          -120]
