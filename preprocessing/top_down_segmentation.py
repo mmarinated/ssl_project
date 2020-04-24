@@ -11,7 +11,7 @@ from ssl_project.data_loaders.data_helper import UnlabeledDataset, LabeledDatase
 LINE_VALUE = 0.1111
 EGO_TYPES = np.array([LINE_VALUE, 0.5019608, 0.827451 ,  0.98039216, 1.       ], dtype=np.float32)
 EGO_NAMES = np.array(["line",    "sidewalk",    "road", "crosswalk", "ground"])
-EGO_CLASS = np.arange(4) + max(CATEGORY_TO_IDX.values()) + 1
+EGO_CLASS = np.arange(len(EGO_TYPES)) + max(CATEGORY_TO_IDX.values()) + 1
 
 VALUE_TO_CATEGORY = {
     idx : cat for cat, idx in CATEGORY_TO_IDX.items()
