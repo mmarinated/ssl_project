@@ -24,7 +24,11 @@ class encoder(nn.Module):
             resnet = models.resnet50(pretrained=True)
             
         resnet.avgpool = nn.AdaptiveAvgPool2d(output_size=(8, 8))
-        self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1])
+        
+        if self.resnet_style == '18':
+            self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1])
+        elif self.resnet_style == '50':
+            self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1], nn.Conv2d(2048, 512, 1))
 
     def forward(self, x):
         x = self.resnet_encoder(x)
