@@ -3,6 +3,9 @@ import numpy as np
 from joblib import Parallel, delayed
 from sklearn.linear_model import LinearRegression
 from tqdm import tqdm
+import torchvision
+from ssl_project.utils import to_np
+from ssl_project.data_loaders.helper import convert_map_to_road_map
 
 import cv2
 from ssl_project.constants import *
@@ -199,6 +202,7 @@ def create_dist_WW():
 
 
 def create_segm_hw(top_down_segm_WW, height_WW, camera_idx):
+    """returns segm_hw with NO_IMAGE_LABEL """
     segm_hw     = get_warped_hw(top_down_segm_WW, height_WW, 
                                 camera_idx=camera_idx, level_height_in_m=0)
 
@@ -236,6 +240,28 @@ def create_label_data(scene_id):
 
             cv2.imwrite(f"{PATH_TMP}/SEGM_{camera_name}.png", segm_hw)
             cv2.imwrite(f"{PATH_TMP}/DIST_{camera_name}.png", dist_hw)
+
+
+
+def create_label_data_road_only(scene_id):
+    def get_road_image(PATH_TMP):
+        ego_image = cv2.imread(f"{PATH_TMP}/ego.png", cv2.IMREAD_UNCHANGED)
+        ego_image = torchvision.transforms.functional.to_tensor(ego_image)
+        road_image = to_np(convert_map_to_road_map(ego_image)).astype(int)
+        return road_image
+
+    height_WW = np.zeros((EGO_IMAGE_SIZE, EGO_IMAGE_SIZE))
+    for sample_id in tqdm(range(NUM_SAMPLE_PER_SCENE)):
+        PATH_TMP = f"{PATH_TO_DATA}/scene_{scene_id}/sample_{sample_id}"
+        top_down_segm_WW = get_road_image(PATH_TMP) # TODO cv2.imread(f"{PATH_TMP}/top_down_segm.png", cv2.IMREAD_UNCHANGED)
+        # return top_down_segm_WW
+        
+        for idx, camera_name in enumerate(CAM_NAMES):
+            segm_hw = create_segm_hw(top_down_segm_WW, height_WW, idx)
+            # 1 is road 0 is not road
+            segm_hw[segm_hw != 1] = 0 # TODO max(top_down_segmentation.VALUE_TO_CATEGORY.keys()) + 1
+            cv2.imwrite(f"{PATH_TMP}/ROAD_SEGM_{camera_name}.png", segm_hw)
+            
 
 
 def create_data_all(n_jobs=8, slc=slice(None), debug=False):    
