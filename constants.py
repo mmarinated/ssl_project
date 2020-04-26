@@ -23,6 +23,18 @@ CATEGORY_TO_IDX = {
     'animal': 8,
 }
 
+CATEGORY_TO_HEIGHT = {
+    'other_vehicle': 1.8,
+    'bicycle': 1.5,
+    'car': 1.8,
+    'pedestrian': 1.7,
+    'truck': 3.4,
+    'bus': 4,
+    'motorcycle': 1.5,
+    'emergency_vehicle': 3,
+    'animal': 1.5,
+}
+
 NUM_SAMPLE_PER_SCENE = 126
 NUM_IMAGE_PER_SAMPLE = 6
 
