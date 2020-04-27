@@ -13,7 +13,7 @@ import torchvision
 from shapely.geometry import Polygon
 
 def to_np(x):
-    return x.detach().data.squeeze().numpy()
+    return x.detach().cpu().data.squeeze().numpy()
 
 
 def bounding_boxes_to_segmentation(full_width, full_height, scale, bounding_boxes, categories):
