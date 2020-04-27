@@ -201,7 +201,7 @@ class vae(nn.Module):
         else:
             return mu
 
-    def forward(self, x, is_training, defined_mu=None):
+    def forward(self, x, is_training=True, defined_mu=None):
         n_img = x.shape[1]
         z_arr = []
         for i in range(n_img): 
