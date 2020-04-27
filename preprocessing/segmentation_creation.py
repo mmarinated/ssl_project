@@ -11,6 +11,7 @@ from paths import PATH_TO_ANNOTATION, PATH_TO_DATA
 from preprocessing import projections
 from constants import CAM_NAMES
 
+# from joblib import Parallel, delayed
 
 def main():
     transform = torchvision.transforms.ToTensor()
@@ -27,9 +28,11 @@ def main():
 
     annotate = projections.PixelLabels(x_shift=0)
 
+    
+    
     for i in tqdm(range(len(labeled_trainset))):
         sample, target, road_image, extra = labeled_trainset[i]
-        _, _, sample_path = labeled_trainset.get_ids_and_path(i)
+        _, _, sample_path = labeled_trainset._get_ids_and_path(i)
 
         mask_6hw = annotate.get_pixel_segmentation_for_photos(target)
         for cam_name, mask_hw in zip(CAM_NAMES, mask_6hw):
