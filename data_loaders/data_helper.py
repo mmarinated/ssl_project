@@ -1,5 +1,6 @@
 import os
 from PIL import Image
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -103,6 +104,7 @@ class AbstractLabeledDataset(torch.utils.data.Dataset):
         self.scene_index = scene_index
         self.transform = transform
         self.extra_info = extra_info
+        self.cache  = {}
     
     def __len__(self):
         return self.scene_index.size * NUM_SAMPLE_PER_SCENE
@@ -169,12 +171,19 @@ class LabeledDataset(AbstractLabeledDataset):
         return 
             image_tensor, target, road_image, (extra or None)
         """
+        if index in self.cache:
+            return self.cache[index]
+        
         scene_id, sample_id, sample_path = self._get_ids_and_path(index)
         image_63hw = self._get_images(sample_path)
         target, road_image, ego_image, data_entries = self._get_target_road_ego_image(scene_id, sample_id, sample_path)
-
-        return (image_63hw, target, road_image, 
+        
+        output = (image_63hw, target, road_image, 
                 self._get_extra(data_entries, ego_image) if self.extra_info else None)
+        
+        self.cache[index] = output
+        
+        return output
 
 class SegmentationDatasetAllImages(AbstractLabeledDataset):
     def _get_masks(self, sample_path, mask_slc=slice(None)):

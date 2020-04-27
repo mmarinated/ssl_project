@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
 import matplotlib.pyplot as plt
 
 from modelzoo import loss_function
@@ -13,7 +13,7 @@ from datetime import datetime
 from helper import collate_fn, compute_ts_road_map
 
 class Learner:
-    def __init__(self, *
+    def __init__(self, *,
             model_tag,
             device,
             resnet_style='18',
@@ -112,7 +112,6 @@ class Learner:
             # Each epoch has a training and validation phase
             for phase in ['train', 'val']:
                 if phase == 'train':
-                    self.scheduler.step()
                     self.model.train()  # Set model to training mode
                 else:
                     self.model.eval()  # Set model to evaluate mode
@@ -121,7 +120,7 @@ class Learner:
                 threat_score = 0.0
 
                 # Iterate over data.
-                for i, temp_batch in tqdm(enumerate(self.dataloaders[phase])):
+                for i, temp_batch in enumerate(tqdm(self.dataloaders[phase])):
                     samples, targets, road_images, extras  = temp_batch
                     samples = torch.stack(samples).to(self.device)
                     road_images = torch.stack(road_images).to(self.device)
@@ -142,6 +141,7 @@ class Learner:
                         if phase == 'train':
                             loss.backward()
                             self.optimizer.step()
+                            self.scheduler.step()
                         else:
                             for pred_map,road_image in zip(pred_maps,road_images):
                                 ts_road_map = compute_ts_road_map(pred_map > threshold, road_image)
@@ -149,13 +149,14 @@ class Learner:
 
                     running_loss += loss.item() #*batch_size
 
-                    # # tensorboard logging
-                    # if phase == 'train':
-                    #     self.writer.add_scalar(phase+'_loss', loss.item(), 
-                    #         epoch * len(train_labeled_set) / dataloaders[phase].batch_size + i)
-                    #     if model_type == 'vae':
-                    #         writer.add_scalar(phase+'_loss_CE', CE.item(), epoch * len(train_labeled_set) / dataloaders[phase].batch_size + i)
-                    #         writer.add_scalar(phase+'_loss_KLD', KLD.item(), epoch * len(train_labeled_set) / dataloaders[phase].batch_size + i)
+                    # tensorboard logging
+                    if phase == 'train':
+                        writer_idx = self.epoch * len(self.train_loader) + i
+                        self.writer.add_scalar(phase+'_loss', loss.item(), writer_idx)
+                        if self.model_type == 'vae':
+                            self.writer.add_scalar(phase+'_loss_CE', CE.item(), writer_idx)
+                            self.writer.add_scalar(phase+'_loss_KLD', KLD.item(), writer_idx)
+
                 pass # end for batch loop
 
                     # statistics
@@ -202,24 +203,28 @@ class Learner:
 
 
 
-    def report_loss(self, phase, model_path, display_images = False, n_batch_to_display = 3, threshold = 0.5):
+    def report_loss(self, split_name="val", model_path=None, display_images=True, 
+                    batches_idces_to_display=slice(None), threshold = 0.5):
+        assert split_name in ["train", "val", "test"]
         
-        assert phase != 'unlabeled'
+        print('Estimating performance on {} set'.format(split_name))
         
-        print('Estimating performance on {} set'.format(phase))
-        print('Restoring Best checkpoint from {}'.format(model_path))
-        state = torch.load(model_path)
-        # self.restore_model()
-        self.model.load_state_dict(state['state_dict'])
+        if model_path is not None:
+            print('Restoring Best checkpoint from {}'.format(model_path))
+            state = torch.load(model_path)
+            # self.restore_model()
+            self.model.load_state_dict(state['state_dict'])
         
         self.model.eval()
 
         threat_score = 0.0
         total = 0.0
         
-        for i, temp_batch in enumerate(self.dataloaders[phase]):
-            if display_images and i == n_batch_to_display:
-                break
+        batches_idces_to_display = np.arange(len(self.dataloaders[split_name]))[batches_idces_to_display]
+        
+        for i, temp_batch in enumerate(self.dataloaders[split_name]):
+            if i not in batches_idces_to_display:
+                continue
             total += len(temp_batch[0])
             samples, targets, road_images, extra = temp_batch
             samples = torch.stack(samples).to(self.device)
@@ -230,30 +235,32 @@ class Learner:
             elif self.model_type == 'vae':
                 pred_maps, mu, logvar = self.model(samples,is_training=False)
 
-            for pred_map,road_image in zip(pred_maps,road_images):
+            for pred_map, road_image in zip(pred_maps,road_images):
                 ts_road_map = compute_ts_road_map(pred_map > threshold, road_image)
                 threat_score += ts_road_map
 
             if display_images:
-                for sample,pred_map,road_image in zip(samples,pred_maps,road_images):
+                for sample, pred_map, road_image in zip(samples,pred_maps,road_images):
                     print('Test Batch: {}'.format(i))
+                    self.show_predictions(sample, pred_map, road_image, threshold)
                     # CAM_FRONT_LEFT, CAM_FRONT, CAM_FRONT_RIGHT, CAM_BACK_LEFT, CAM_BACK, CAM_BACK_RIGHT
-                    plt.imshow(torchvision.utils.make_grid(sample.detach().cpu(), nrow=3).numpy().transpose(1, 2, 0))
-                    fig, (ax1, ax2) = plt.subplots(1, 2)
-                    fig.suptitle('Road Map Comparison')
-                    ax1.imshow(road_image.detach().cpu(), cmap='binary')
-                    ax1.set_title('Original Road Map')
-                    ax2.imshow((pred_map > threshold).detach().cpu(), cmap='binary')
-                    ax2.set_title('Predicted Road Map')
-                    plt.show()
-                    print('-'*20)
+
 
         threat_score /= total
         print('Total samples: {}, Total Threat Score: {}'.format(total,total*threat_score))
         print('Mean Threat Score is: {}'.format(threat_score))
 
 
-
+    def show_predictions(self, sample, pred_map, road_image, threshold):
+        plt.imshow(torchvision.utils.make_grid(sample.detach().cpu(), nrow=3).numpy().transpose(1, 2, 0))
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.suptitle('Road Map Comparison')
+        ax1.imshow(road_image.detach().cpu(), cmap='binary')
+        ax1.set_title('Original Road Map')
+        ax2.imshow((pred_map > threshold).detach().cpu(), cmap='binary')
+        ax2.set_title('Predicted Road Map')
+        plt.show()
+        print('-'*20)
 
 
 # def _how_it_should_look(self):

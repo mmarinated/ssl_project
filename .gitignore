@@ -3,6 +3,8 @@
 *tmp*
 *.jpg
 
+checkpoints/
+
 # data
 data/
 
