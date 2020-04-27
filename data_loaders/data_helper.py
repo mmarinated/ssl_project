@@ -171,8 +171,8 @@ class LabeledDataset(AbstractLabeledDataset):
         return 
             image_tensor, target, road_image, (extra or None)
         """
-        if index in self.cache:
-            return self.cache[index]
+        # if index in self.cache:
+        #     return self.cache[index]
         
         scene_id, sample_id, sample_path = self._get_ids_and_path(index)
         image_63hw = self._get_images(sample_path)
@@ -181,7 +181,7 @@ class LabeledDataset(AbstractLabeledDataset):
         output = (image_63hw, target, road_image, 
                 self._get_extra(data_entries, ego_image) if self.extra_info else None)
         
-        self.cache[index] = output
+        # self.cache[index] = output
         
         return output
 

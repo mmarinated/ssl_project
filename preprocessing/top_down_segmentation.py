@@ -22,6 +22,8 @@ VALUE_TO_CATEGORY.update(zip(EGO_CLASS, EGO_NAMES))
 x, y = np.meshgrid(np.arange(EGO_IMAGE_SIZE), np.arange(EGO_IMAGE_SIZE))
 xy_N2 = np.vstack((x.ravel(), y.ravel())).T
 
+
+
 def _get_hull_from_bb(bb):
     bb_42 = bb.numpy().copy().T
     # many costyls
@@ -51,7 +53,7 @@ def _create_mask(extra, target):
     return ego_hw
 
 
-def _run(idx):
+def _run(idx, mapping: dict, prefix: str):
     labeled_trainset = LabeledDataset()
  
     scene_id, sample_id, path = labeled_trainset._get_ids_and_path(idx)
@@ -59,17 +61,33 @@ def _run(idx):
     extra = labeled_trainset._get_extra(data_entries, ego_image)
     
     mask_hw = _create_mask(extra, target)
-    cv2.imwrite(f"{path}/top_down_segm.png", mask_hw)
+    if mapping is not None:
+        mask_hw = _map_arr(mask_hw, mapping)
+
+    print(f"{path}/{prefix}top_down_segm.png")
+    cv2.imwrite(f"{path}/{prefix}top_down_segm.png", mask_hw)
 
 
-def create_data(n_jobs=8, slc=slice(None), debug=False):
+def create_data(mapping=None, prefix="", n_jobs=8, slc=slice(None), debug=False):
     labeled_trainset = LabeledDataset()
     
     if debug:
         for idx in range(len(labeled_trainset))[slc]:
-            _run(idx)
+            _run(idx, mapping, prefix)
     else:
         Parallel(n_jobs=n_jobs)(
-            delayed(_run)(idx) 
+            delayed(_run)(idx, mapping, prefix) 
             for idx in range(len(labeled_trainset))[slc]
         )
+
+
+def _map_arr(a, d):
+    """
+    >>> _map_arr(np.array([[0,1,2,],[2,1,0]]), {0:10, 1:100, 2:-100})
+    array([[  10,  100, -100],
+           [-100,  100,   10]])
+    """
+    u, inv = np.unique(a,return_inverse = True)
+    assert np.isin(u, np.array(list(d.keys()))).all()
+    ans = np.array([d[x] for x in u])[inv].reshape(a.shape)
+    return ans

@@ -23,6 +23,8 @@ CATEGORY_TO_IDX = {
     'animal': 8,
 }
 
+IDX_TO_CATEGORY = {v:k for k, v in CATEGORY_TO_IDX.items()}
+
 CATEGORY_TO_HEIGHT = {
     'other_vehicle': 1.8,
     'bicycle': 1.5,
