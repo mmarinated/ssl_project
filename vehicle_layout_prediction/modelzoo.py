@@ -201,7 +201,7 @@ class vae(nn.Module):
         else:
             return mu
 
-    def forward(self, x, is_training, defined_mu=None):
+    def forward(self, x, defined_mu=None):
         n_img = x.shape[1]
         z_arr = []
         for i in range(n_img): 
@@ -209,7 +209,7 @@ class vae(nn.Module):
         x = torch.cat(z_arr,1)
         
         mu, logvar = self.encoder_after_resnet(x)
-        z = self.reparameterize(is_training, mu, logvar)
+        z = self.reparameterize(self.train(), mu, logvar)
         if defined_mu is not None:
             z = defined_mu
         pred_map = self.vae_decoder(z)
@@ -242,7 +242,101 @@ class vae(nn.Module):
         self.vae_decoder.summarize(z,offset=' '*5)
         print(offset+'----')
         print(offset+'Output Size:{}'.format(pred_map.shape))
-    
+
+
+class encoder_after_resnet_concat(nn.Module):
+
+    def __init__(self):
+        super(encoder_after_resnet_concat, self).__init__()
+        
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = x.view(-1, 4096*2)
+        mu = x[:,:4096]
+        logvar = x[:,4096:]
+        return mu, logvar
+              
+    def summarize(self,x,offset=''):
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        x = self.conv(x)
+        print(offset+'Convolved Encoded state shape: {}'.format(x.shape))
+        x = x.view(-1, 4096*2)
+        mu = x[:,:4096]
+        logvar = x[:,4096:]
+        print(offset+'Output Mean Size:{}'.format(mu.shape))
+        print(offset+'Output Var Size:{}'.format(logvar.shape))
+class vae_concat(nn.Module):
+    def __init__(self, resnet_style='18', pretrained=False):
+        super(vae_concat, self).__init__()
+        
+        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.encoder_after_resnet = encoder_after_resnet_concat()
+        self.vae_decoder = vae_decoder()
+
+    def reparameterize(self, is_training, mu, logvar):
+        if is_training:
+            std = torch.exp(0.5*logvar)
+            eps = torch.randn_like(std)
+            return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def forward(self, x, defined_mu=None):
+        n_img = x.shape[1]
+        z_arr = []
+        top = torch.cat((x[:,0], x[:,1], x[:,2]), dim=3)
+        bottom = torch.cat((x[:,3], x[:,4], x[:,5]), dim=3)
+        tot = torch.cat((top, bottom), dim=2)
+        x = self.encoder(tot)
+        mu, logvar = self.encoder_after_resnet(x)
+        z = self.reparameterize(self.training, mu, logvar)
+        if defined_mu is not None:
+            z = defined_mu
+        pred_map = self.vae_decoder(z)
+        return pred_map, mu, logvar
+              
+    def summarize(self,x,offset=''):
+        original_inp_slice = x[:,0]
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        n_img = x.shape[1]
+        z_arr = []
+        print(x[:,0].size())
+        top = torch.cat((x[:,0], x[:,1], x[:,2]), dim=3)
+        bottom = torch.cat((x[:,3], x[:,4], x[:,5]), dim=3)
+        tot = torch.cat((top, bottom), dim=2)
+        x = self.encoder(tot)
+        mu, logvar = self.encoder_after_resnet(x)
+        z = self.reparameterize(is_training=False,mu= mu,logvar= logvar)
+        pred_map = self.vae_decoder(z)
+        print(offset+'----')
+        self.encoder.summarize(original_inp_slice,offset=' '*5)
+        print(offset+'----')
+        #print(offset+'Number of encoded states: {}, each of size: {}'.format(len(z_arr),z_arr[0].shape))
+        print(offset+'Concatenated encoded states shape: {}'.format(x.shape))
+        print(offset+'----')
+        self.encoder_after_resnet.summarize(x,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Output Mean Size:{}'.format(mu.shape))
+        print(offset+'Output Var Size:{}'.format(logvar.shape))
+        print(offset+'Reparameterized Hidden State size: {}'.format(z.shape))
+        print(offset+'----')
+        self.vae_decoder.summarize(z,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Output Size:{}'.format(pred_map.shape))
+
 def loss_function(pred_maps, road_images, mu, logvar):
     criterion = nn.BCELoss()
     CE = criterion(pred_maps, road_images.float())

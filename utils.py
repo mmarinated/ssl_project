@@ -33,7 +33,7 @@ def bounding_boxes_to_segmentation(full_width, full_height, scale, bounding_boxe
     return out
 
 def get_bounding_boxes_from_seg(segment_tensor, scale, full_height, full_width):
-    _, contours, _ = cv2.findContours(to_np(segment_tensor).astype(np.int32), cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(to_np(segment_tensor).astype(np.int32), cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_SIMPLE)
 
     contours_poly = [None]*len(contours)
     boundRect = [None]*len(contours)
@@ -53,8 +53,14 @@ def get_bounding_boxes_from_seg(segment_tensor, scale, full_height, full_width):
                         [convert(boundRect[i][0], "x"), convert(boundRect[i][1], "y")],
                         [convert(boundRect[i][0], "x"), convert(boundRect[i][1] + boundRect[i][3], "y")]
                         ]
-        
-    return torch.FloatTensor(boundRect).permute(0,2,1)
+    filteredBoundRect = []
+    for i in range(len(boundRect)):
+        if ( ( boundRect[i][0][0] - boundRect[i][2][0] ) > 1) and (( boundRect[i][0][1] - boundRect[i][1][1] )>1):
+            filteredBoundRect.append(boundRect[i])
+    if len(filteredBoundRect) > 0:
+        return torch.FloatTensor(filteredBoundRect).permute(0,2,1)
+    else:
+        return torch.zeros((1,2,4))
 
 
 def compute_ats_bounding_boxes(boxes1, boxes2):

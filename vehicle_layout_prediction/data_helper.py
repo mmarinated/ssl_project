@@ -28,7 +28,7 @@ image_names = [
 
 # The dataset class for unlabeled data.
 class UnlabeledDataset(torch.utils.data.Dataset):
-    def __init__(self, image_folder, scene_index, first_dim, transform):
+    def __init__(self, image_folder, scene_index, first_dim, transform, rotate=False):
         """
         Args:
             image_folder (string): the location of the image folder
@@ -48,7 +48,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         self.image_folder = image_folder
         self.scene_index = scene_index
         self.transform = transform
-
+        self.rotate = rotate
         assert first_dim in ['sample', 'image']
         self.first_dim = first_dim
 
@@ -68,6 +68,13 @@ class UnlabeledDataset(torch.utils.data.Dataset):
             for image_name in image_names:
                 image_path = os.path.join(sample_path, image_name)
                 image = Image.open(image_path)
+                if self.rotate:
+                    if image_name == 'CAM_BACK.jpeg':
+                        image = torchvision.transforms.functional.rotate(image, 180)
+                    elif image_name == 'CAM_BACK_LEFT.jpeg':
+                        image = torchvision.transforms.functional.rotate(image, 180)
+                    elif image_name == 'CAM_BACK_RIGHT.jpeg':
+                        image = torchvision.transforms.functional.rotate(image, 180)
                 images.append(self.transform(image))
             image_tensor = torch.stack(images)
             
@@ -86,7 +93,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
 # The dataset class for labeled data.
 class LabeledDataset(torch.utils.data.Dataset):    
-    def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True):
+    def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True, rotate=False):
         """
         Args:
             image_folder (string): the location of the image folder
@@ -101,7 +108,8 @@ class LabeledDataset(torch.utils.data.Dataset):
         self.scene_index = scene_index
         self.transform = transform
         self.extra_info = extra_info
-    
+        self.rotate = rotate
+
     def __len__(self):
         return self.scene_index.size * NUM_SAMPLE_PER_SCENE
 
@@ -114,6 +122,13 @@ class LabeledDataset(torch.utils.data.Dataset):
         for image_name in image_names:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
+            if self.rotate:
+                if image_name == 'CAM_BACK.jpeg':
+                    image = torchvision.transforms.functional.rotate(image, 180)
+                elif image_name == 'CAM_BACK_LEFT.jpeg':
+                    image = torchvision.transforms.functional.rotate(image, 180)
+                elif image_name == 'CAM_BACK_RIGHT.jpeg':
+                    image = torchvision.transforms.functional.rotate(image, 180)
             images.append(self.transform(image))
         image_tensor = torch.stack(images)
 
@@ -130,7 +145,11 @@ class LabeledDataset(torch.utils.data.Dataset):
         target['bounding_box'] = torch.as_tensor(corners).view(-1, 2, 4)
         target['category'] = torch.as_tensor(categories)
 
-        tar_sem = utils.bounding_boxes_to_segmentation(800, 800, 10, target['bounding_box'], target['category'])
+        #tar_sem = utils.bounding_boxes_to_segmentation(800, 800, 10, target['bounding_box'], target['category'])
+        tar_sem_path = os.path.join(sample_path, "top_down_segm_carsonly_bw.png")
+        tar_sem_image = Image.open(tar_sem_path)
+        tar_sem = self.transform(tar_sem_image)
+        
         if self.extra_info:
             actions = data_entries.action_id.to_numpy()
             # You can change the binary_lane to False to get a lane with 
