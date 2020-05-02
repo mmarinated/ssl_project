@@ -49,7 +49,7 @@ class ObjectDetectionModel(pl.LightningModule):
 
     
     def configure_optimizers(self):
-        optimizer = optim.Adam(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
 
         return [optimizer], [scheduler]
@@ -162,7 +162,7 @@ class VariationalAutoEncoder(EncoderDecoder):
     def training_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps, mu, logvar = model(samples)
+        pred_maps, mu, logvar = self.model(samples)
         train_loss, CE, KLD = self.criterion(pred_maps, tar_sems, mu, logvar)
 
         self.logger.log_metrics({"train_loss": train_loss / len(samples), 
@@ -185,7 +185,7 @@ class VariationalAutoEncoder(EncoderDecoder):
     def validation_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps, mu, logvar = model(samples)
+        pred_maps, mu, logvar = self.model(samples)
 
         val_loss = self.BCE(pred_maps.squeeze(), tar_sems.float().squeeze())
 
@@ -241,29 +241,3 @@ class VariationalAutoEncoderConcat(EncoderDecoder):
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
         
-if __name__ == "__main__":
-    hparams =  Namespace(**{"resnet_style": "18",
-                          "pretrained": False,
-                          "threshold": 0.5,
-                          "n_scn_train": 24,
-                          "n_scn_val": 3, 
-                          "n_scn_test": 1,
-                          "batch_size": 8,
-                          "learning_rate": 0.0001,
-                          "weight_decay": 0.00001})
-
-    checkpoint_callback = ModelCheckpoint(
-                        filepath="./checkpoints/vae_concat/checkpoint_{epoch}_{val_ts:.3f}",
-                        save_top_k=3,
-                        verbose=False,
-                        monitor='val_ts',
-                        mode='max',
-                        prefix=''
-                    )
-
-    logger = pl.loggers.TensorBoardLogger("tb_logs", "vae_concat_test")
-    logger.log_hyperparams(hparams)
-    model = VariationalAutoEncoderConcat(hparams)
-    trainer = pl.Trainer(logger=logger, gpus=1, max_epochs=30, checkpoint_callback=checkpoint_callback)
-
-    trainer.fit(model)
