@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.spatial import Delaunay
 from ssl_project.constants import CATEGORY_TO_IDX, EGO_IMAGE_SIZE
+from ssl_project.utils import to_np
 from joblib import Parallel, delayed
 
 import cv2
@@ -22,6 +23,33 @@ VALUE_TO_CATEGORY.update(zip(EGO_CLASS, EGO_NAMES))
 x, y = np.meshgrid(np.arange(EGO_IMAGE_SIZE), np.arange(EGO_IMAGE_SIZE))
 xy_N2 = np.vstack((x.ravel(), y.ravel())).T
 
+
+def create_cars_masks(prefix="CARS_", n_jobs=8, slc=slice(None), debug=False):
+    true_categories = set(CATEGORY_TO_IDX.keys())
+    mapping = {
+        idx: int(name in true_categories) for idx, name in VALUE_TO_CATEGORY.items()
+    }
+    create_mapping_masks(mapping, prefix=prefix, n_jobs=n_jobs, slc=slc, debug=debug)
+
+def create_road_masks(prefix="ROAD_", n_jobs=8, slc=slice(None), debug=False):
+    def _save_road_mask(idx):
+        labeled_trainset = LabeledDataset()
+
+        scene_id, sample_id, path = labeled_trainset._get_ids_and_path(idx)
+        target, road_image, ego_image, data_entries = labeled_trainset._get_target_road_ego_image(scene_id, sample_id, path)
+
+        cv2.imwrite(f"{path}/{prefix}top_down_segm.png", to_np(road_image).astype(int))
+
+    labeled_trainset = LabeledDataset()
+    
+    if debug:
+        for idx in range(len(labeled_trainset))[slc]:
+            _save_road_mask(idx)
+    else:
+        Parallel(n_jobs=n_jobs)(
+            delayed(_save_road_mask)(idx) 
+            for idx in range(len(labeled_trainset))[slc]
+        )
 
 
 def _get_hull_from_bb(bb):
@@ -68,7 +96,10 @@ def _run(idx, mapping: dict, prefix: str):
     cv2.imwrite(f"{path}/{prefix}top_down_segm.png", mask_hw)
 
 
-def create_data(mapping=None, prefix="", n_jobs=8, slc=slice(None), debug=False):
+def create_mapping_masks(mapping=None, prefix="", n_jobs=8, slc=slice(None), debug=False):
+    """
+    Creates ego image by default.
+    """
     labeled_trainset = LabeledDataset()
     
     if debug:
