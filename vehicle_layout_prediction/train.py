@@ -1,4 +1,4 @@
-from pl_modules import VariationalAutoEncoder, AutoEncoder
+from pl_modules import VariationalAutoEncoder, AutoEncoder, MMDVariationalAutoEncoder
 from argparse import Namespace
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -7,7 +7,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 if __name__ == "__main__":
     hparams =  Namespace(**{"resnet_style": "18",
                           "pretrained": False,
-                          "threshold": 0.5,
+                          "threshold": 0.3,
                           "n_scn_train": 24,
                           "n_scn_val": 3, 
                           "n_scn_test": 1,
@@ -15,7 +15,7 @@ if __name__ == "__main__":
                           "learning_rate": 0.0001,
                           "weight_decay": 0.00001})
 
-    experiment_name = "vae_final_test"
+    experiment_name = "vae_final_test_thresh_0.3"
 
     checkpoint_callback = ModelCheckpoint(
                         filepath="./checkpoints/" + experiment_name + "/checkpoint_{epoch}_{val_ts:.3f}",
