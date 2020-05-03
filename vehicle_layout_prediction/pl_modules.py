@@ -12,7 +12,7 @@ from ssl_project.paths import PATH_TO_DATA
 
 from ssl_project.constants import LABELED_SCENE_INDEX
 import os
-from modelzoo import vae, autoencoder, vae_concat
+from modelzoo import vae, autoencoder, vae_concat, mmd_vae, compute_kernel, mmd_loss_function
 from ssl_project.utils import compute_ats_bounding_boxes, get_bounding_boxes_from_seg
 from argparse import Namespace
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -49,7 +49,7 @@ class ObjectDetectionModel(pl.LightningModule):
 
     
     def configure_optimizers(self):
-        optimizer = optim.Adam(model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
 
         return [optimizer], [scheduler]
@@ -116,7 +116,7 @@ class AutoEncoder(EncoderDecoder):
     def training_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps = model(samples)
+        pred_maps = self.model(samples)
 
         train_loss = self.criterion(pred_maps.squeeze(), tar_sems.float().squeeze())
 
@@ -137,7 +137,7 @@ class AutoEncoder(EncoderDecoder):
     def validation_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps = model(samples)
+        pred_maps = self.model(samples)
 
         val_loss = self.criterion(pred_maps.squeeze(), tar_sems.float().squeeze())
 
@@ -162,7 +162,7 @@ class VariationalAutoEncoder(EncoderDecoder):
     def training_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps, mu, logvar = model(samples)
+        pred_maps, mu, logvar = self.model(samples)
         train_loss, CE, KLD = self.criterion(pred_maps, tar_sems, mu, logvar)
 
         self.logger.log_metrics({"train_loss": train_loss / len(samples), 
@@ -185,7 +185,7 @@ class VariationalAutoEncoder(EncoderDecoder):
     def validation_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
-        pred_maps, mu, logvar = model(samples)
+        pred_maps, mu, logvar = self.model(samples)
 
         val_loss = self.BCE(pred_maps.squeeze(), tar_sems.float().squeeze())
 
@@ -193,6 +193,49 @@ class VariationalAutoEncoder(EncoderDecoder):
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
 
+class MMDVariationalAutoEncoder(EncoderDecoder):
+    def __init__(self, hparams):
+        super(MMDVariationalAutoEncoder, self).__init__(hparams)
+
+        self.model = mmd_vae(resnet_style=self.resnet_style, pretrained=self.pretrained)
+
+    def training_step(self, batch, batch_idx):
+        samples, targets, tar_sems, road_images = self.process_batch(batch)
+        b_size = samples.shape[0]
+        z, pred_maps = self.model(samples)
+        true_samples = torch.randn(b_size, z.shape[1]).to(samples.device)
+        mmd = mmd_loss_function(true_samples, z)
+
+        nll = (pred_maps - tar_sems.float()).pow(2).mean()
+        loss = nll + mmd
+
+        self.logger.log_metrics({"train_loss": loss / b_size }, 
+                                self.global_step)
+        return {"loss": loss, "n": b_size}
+
+    def training_epoch_end(self, outputs):
+        avg_training_loss = 0
+        n = 0
+        for out in outputs:
+            avg_training_loss += out["loss"]
+            n += out["n"]
+
+        avg_training_loss /= n
+
+        return {"log": {"avg_train_loss": avg_training_loss}}
+
+    def validation_step(self, batch, batch_idx):
+        samples, targets, tar_sems, road_images = self.process_batch(batch)
+        b_size = samples.shape[0]
+        z, pred_maps = self.model(samples)
+        true_samples = torch.randn(b_size, z.shape[1]).to(samples.device)
+        mmd = mmd_loss_function(true_samples, z)
+        nll = (pred_maps - tar_sems.float()).pow(2).mean()
+        val_loss = nll + mmd
+
+        threat_score = self.get_threat_score(pred_maps, targets)
+
+        return {"val_loss": val_loss, "val_ts": threat_score, "n": b_size }
 class VariationalAutoEncoderConcat(EncoderDecoder):
     def __init__(self, hparams):
         super(VariationalAutoEncoderConcat, self).__init__(hparams)
@@ -241,29 +284,3 @@ class VariationalAutoEncoderConcat(EncoderDecoder):
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
         
-if __name__ == "__main__":
-    hparams =  Namespace(**{"resnet_style": "18",
-                          "pretrained": False,
-                          "threshold": 0.5,
-                          "n_scn_train": 24,
-                          "n_scn_val": 3, 
-                          "n_scn_test": 1,
-                          "batch_size": 8,
-                          "learning_rate": 0.0001,
-                          "weight_decay": 0.00001})
-
-    checkpoint_callback = ModelCheckpoint(
-                        filepath="./checkpoints/vae_concat/checkpoint_{epoch}_{val_ts:.3f}",
-                        save_top_k=3,
-                        verbose=False,
-                        monitor='val_ts',
-                        mode='max',
-                        prefix=''
-                    )
-
-    logger = pl.loggers.TensorBoardLogger("tb_logs", "vae_concat_test")
-    logger.log_hyperparams(hparams)
-    model = VariationalAutoEncoderConcat(hparams)
-    trainer = pl.Trainer(logger=logger, gpus=1, max_epochs=30, checkpoint_callback=checkpoint_callback)
-
-    trainer.fit(model)

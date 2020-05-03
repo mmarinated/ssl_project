@@ -337,6 +337,136 @@ class vae_concat(nn.Module):
         print(offset+'----')
         print(offset+'Output Size:{}'.format(pred_map.shape))
 
+class mmd_encoder_after_resnet(nn.Module):
+
+    def __init__(self):
+        super(mmd_encoder_after_resnet, self).__init__()
+        
+        self.conv = nn.Sequential(
+            nn.Conv2d(3072, 1024, 3, padding=1),
+            nn.BatchNorm2d(1024),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(1024, 512, 3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(inplace=True),
+            nn.MaxPool2d(2)
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = x.view(-1, 8192)
+        return x
+              
+    def summarize(self,x,offset=''):
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        x = self.conv(x)
+        print(offset+'Convolved Encoded state shape: {}'.format(x.shape))
+        x = x.view(-1,8192)
+        print(offset+'Output Size:{}'.format(x.shape))
+    
+class mmd_decoder(nn.Module):
+    def __init__(self):
+        super(mmd_decoder, self).__init__()
+        nz = 128
+        ngf = 64
+        nc = 1
+        self.deconv_decoder = nn.Sequential(
+            nn.ConvTranspose2d(nz, ngf * 16, 4, 3, 0, bias=False),
+            nn.BatchNorm2d(ngf * 16),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(ngf * 16, ngf*8, 2, 2, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(ngf * 8, ngf*4, 2, 2, 0, bias=False),
+            nn.BatchNorm2d(ngf * 4),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(ngf * 4, ngf*2, 2, 2, 0, bias=False),
+            nn.BatchNorm2d(ngf * 2),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(ngf * 2, ngf, 2, 2, 0, bias=False),
+            nn.BatchNorm2d(ngf),
+            nn.LeakyReLU(inplace=True),
+            nn.ConvTranspose2d(ngf, nc, 2, 2, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x = x.view(-1, 128, 8, 8)
+        x = self.deconv_decoder(x).squeeze(1)
+        return x
+
+    def summarize(self,x,offset=''):
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        x = x.view(-1, 128, 8, 8)
+        print(offset+'Input recast into shape: {}'.format(x.shape))
+        x = self.deconv_decoder(x).squeeze(1)
+        print(offset+'Output Size:{}'.format(x.shape))
+
+
+class mmd_vae(torch.nn.Module):
+    
+    def __init__(self, resnet_style='18', pretrained=False):
+        super(mmd_vae, self).__init__()
+        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.mmd_encoder_after_resnet = mmd_encoder_after_resnet()
+        self.mmd_decoder = mmd_decoder()
+        
+    def forward(self, x):
+        n_img = x.shape[1]
+        z_arr = []
+        for i in range(n_img): 
+            z_arr.append(self.encoder(x[:,i]))
+        x = torch.cat(z_arr,1)
+        z = self.mmd_encoder_after_resnet(x)
+        pred_map = self.mmd_decoder(z)
+        return z, pred_map
+    
+    def summarize(self,x,offset=''):
+        original_inp_slice = x[:,0]
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        n_img = x.shape[1]
+        z_arr = []
+        for i in range(n_img): 
+            z_arr.append(self.encoder(x[:,i]))
+        x = torch.cat(z_arr,1)
+        z = self.mmd_encoder_after_resnet(x)
+        pred_map = self.mmd_decoder(z)
+        print(offset+'----')
+        self.encoder.summarize(original_inp_slice,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Number of encoded states: {}, each of size: {}'.format(len(z_arr),z_arr[0].shape))
+        print(offset+'Concatenated encoded states shape: {}'.format(x.shape))
+        print(offset+'----')
+        self.mmd_encoder_after_resnet.summarize(x,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Hidden State size: {}'.format(z.shape))
+        print(offset+'----')
+        self.mmd_decoder.summarize(z,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Output Size:{}'.format(pred_map.shape))
+        
+        
+def compute_kernel(x, y):
+    x_size = x.size(0)
+    y_size = y.size(0)
+    dim = x.size(1)
+    x = x.unsqueeze(1) # (x_size, 1, dim)
+    y = y.unsqueeze(0) # (1, y_size, dim)
+    tiled_x = x.expand(x_size, y_size, dim)
+    tiled_y = y.expand(x_size, y_size, dim)
+    kernel_input = (tiled_x - tiled_y).pow(2).mean(2)/float(dim)
+    return torch.exp(-kernel_input) # (x_size, y_size)
+
+def mmd_loss_function(x, y):
+    x_kernel = compute_kernel(x, x)
+    y_kernel = compute_kernel(y, y)
+    xy_kernel = compute_kernel(x, y)
+    mmd = x_kernel.mean() + y_kernel.mean() - 2*xy_kernel.mean()
+    return mmd
+    
 def loss_function(pred_maps, road_images, mu, logvar):
     criterion = nn.BCELoss()
     CE = criterion(pred_maps, road_images.float())
