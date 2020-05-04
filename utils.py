@@ -12,6 +12,8 @@ import torchvision
 
 from shapely.geometry import Polygon
 
+TRANSFORM = torchvision.transforms.ToTensor()
+
 def to_np(x):
     return x.detach().cpu().data.squeeze().numpy()
 

@@ -4,6 +4,9 @@
 *.jpg
 
 checkpoints/
+**/lightning_logs 
+ssl_ideas/lr_find_temp.ckpt  
+**/tb_logs  
 
 # data
 data/

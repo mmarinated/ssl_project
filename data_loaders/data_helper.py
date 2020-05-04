@@ -185,6 +185,30 @@ class LabeledDataset(AbstractLabeledDataset):
         
         return output
 
+class FastLabeledRoadDataset(AbstractLabeledDataset):
+    def __init__(self, road_image_name="ROAD_top_down_segm", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.road_image_name = road_image_name
+        
+    def _get_road_image(self, sample_path):
+        image_path = os.path.join(sample_path, f"{self.road_image_name}.png")
+        image = Image.open(image_path)
+        return self.transform(image)
+        
+    def __getitem__(self, index):
+        """
+        return 
+            image_tensor, target, road_image, (extra or None)
+        """
+        # if index in self.cache:
+        #     return self.cache[index]
+        
+        scene_id, sample_id, sample_path = self._get_ids_and_path(index)
+        image_63hw = self._get_images(sample_path)
+        road_image_WW = self._get_road_image(sample_path)
+
+        return image_63hw, None, road_image_WW, None
+    
 class SegmentationDatasetAllImages(AbstractLabeledDataset):
     def _get_masks(self, sample_path, mask_slc=slice(None)):
         masks = []
