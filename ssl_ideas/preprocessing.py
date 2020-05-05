@@ -59,4 +59,4 @@ class _HelperForTripleDataset(torch.utils.data.Dataset):
             for offset in self.idces_offset
         ])
         
-        return images_o3hw, self.label
+        return images_o3hw, self.cam_name, self.label
