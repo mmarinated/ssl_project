@@ -3,10 +3,11 @@
 *tmp*
 *.jpg
 
+**/*checkpoint*
 checkpoints/
-**/lightning_logs 
-ssl_ideas/lr_find_temp.ckpt  
-**/tb_logs  
+**/*logs
+ssl_ideas/lr_find_temp.ckpt
+**/tb_logs
 
 # data
 data/
