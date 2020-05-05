@@ -1,27 +1,34 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchsummary import summary
+# from torchsummary import summary
 import torchvision
 from torchvision import models, transforms
 
-class encoder(nn.Module):
+
+def encoder(resnet_style='18', pretrained=False, path_to_pretrained_model=None):
+    if path_to_pretrained_model is None:
+        return _encoder(resnet_style, pretrained)
+    else:
+        return _encoder.from_path(path_to_pretrained_model)
+
+class _encoder(nn.Module):
+    @classmethod
+    def from_path(unused, path_to_pretrained_model):
+        print("KEK")
+        model = torch.load(path_to_pretrained_model)
+        return model
     
     def __init__(self, resnet_style='18', pretrained=False):
         super(encoder, self).__init__()
+        
         self.resnet_style = resnet_style
         self.pretrained = pretrained
-        if self.resnet_style == '18' and self.pretrained==False:
-            resnet = models.resnet18(pretrained=False)
-            
-        elif self.resnet_style == '18' and self.pretrained==True:
-            resnet = models.resnet18(pretrained=True)
-            
-        if self.resnet_style == '50' and self.pretrained==False:
-            resnet = models.resnet50(pretrained=False)
-            
-        if self.resnet_style == '50' and self.pretrained==True:
-            resnet = models.resnet50(pretrained=True)
+        
+        if self.resnet_style == '18':
+            resnet = models.resnet18(pretrained=self.pretrained)
+        elif self.resnet_style == '50':
+            resnet = models.resnet50(pretrained=self.pretrained)
             
         resnet.avgpool = nn.AdaptiveAvgPool2d(output_size=(8, 8))
         
@@ -30,6 +37,7 @@ class encoder(nn.Module):
         elif self.resnet_style == '50':
             self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1], nn.Conv2d(2048, 512, 1))
 
+            
     def forward(self, x):
         x = self.resnet_encoder(x)
         return x
@@ -77,10 +85,11 @@ class decoder(nn.Module):
     
 class autoencoder(nn.Module):
 
-    def __init__(self, resnet_style='18', pretrained=False):
+    def __init__(self, resnet_style='18', pretrained=False, path_to_pretrained_model=None):
         super(autoencoder, self).__init__()
         self.nz = 3072
-        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.encoder = encoder(resnet_style, pretrained, path_to_pretrained_model)
+        
         self.decoder = decoder()
 
     def forward(self, x):
@@ -186,10 +195,9 @@ class vae_decoder(nn.Module):
               
 class vae(nn.Module):
 
-    def __init__(self, resnet_style='18', pretrained=False):
+    def __init__(self, resnet_style='18', pretrained=False, path_to_pretrained_model=None):
         super(vae, self).__init__()
-        
-        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.encoder = encoder(resnet_style, pretrained, path_to_pretrained_model)
         self.encoder_after_resnet = encoder_after_resnet()
         self.vae_decoder = vae_decoder()
 
@@ -277,11 +285,12 @@ class encoder_after_resnet_concat(nn.Module):
         logvar = x[:,4096:]
         print(offset+'Output Mean Size:{}'.format(mu.shape))
         print(offset+'Output Var Size:{}'.format(logvar.shape))
+        
 class vae_concat(nn.Module):
-    def __init__(self, resnet_style='18', pretrained=False):
+    def __init__(self, resnet_style='18', pretrained=False, path_to_pretrained_model=None):
         super(vae_concat, self).__init__()
         
-        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.encoder = encoder(resnet_style, pretrained, path_to_pretrained_model)
         self.encoder_after_resnet = encoder_after_resnet_concat()
         self.vae_decoder = vae_decoder()
 
@@ -407,9 +416,9 @@ class mmd_decoder(nn.Module):
 
 class mmd_vae(torch.nn.Module):
     
-    def __init__(self, resnet_style='18', pretrained=False):
+    def __init__(self, resnet_style='18', pretrained=False, path_to_pretrained_model=None):
         super(mmd_vae, self).__init__()
-        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.encoder = encoder(resnet_style, pretrained, path_to_pretrained_model)
         self.mmd_encoder_after_resnet = mmd_encoder_after_resnet()
         self.mmd_decoder = mmd_decoder()
         
