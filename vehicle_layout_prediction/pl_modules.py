@@ -21,7 +21,7 @@ class ObjectDetectionModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         assert(hparams.n_scn_train + hparams.n_scn_val + hparams.n_scn_test == len(LABELED_SCENE_INDEX) )
-        
+        self.hparams = hparams
         self.transform = torchvision.transforms.ToTensor()
 
         self.n_scn_train = hparams.n_scn_train
@@ -47,7 +47,9 @@ class ObjectDetectionModel(pl.LightningModule):
 #        dataset = LabeledDataset(PATH_TO_DATA, f"{PATH_TO_DATA}/annotations.csv", LABELED_SCENE_INDEX[self.n_scn_train+self.n_scn_val:], extra_info = False)
 #        loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4, collate_fn=collate_fn)
 
-    
+    def test_dataloader(self):
+        return self.val_dataloader()
+
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
@@ -63,6 +65,12 @@ class ObjectDetectionModel(pl.LightningModule):
         tar_sems = tar_sems > 0
 
         return samples, targets, tar_sems, road_images 
+
+    def test_step(self, batch, batch_idx):
+        return self.validation_step(batch, batch_idx)
+
+    def test_epoch_end(self, outputs):
+        return self.validation_epoch_end(outputs)
 
 class EncoderDecoder(ObjectDetectionModel):
     def __init__(self, hparams):
@@ -192,6 +200,7 @@ class VariationalAutoEncoder(EncoderDecoder):
         threat_score = self.get_threat_score(pred_maps, targets)
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
+
 
 class MMDVariationalAutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
