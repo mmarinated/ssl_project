@@ -14,6 +14,7 @@ import utils
 from helper import convert_map_to_lane_map, convert_map_to_road_map
 from tqdm import tqdm
 
+TRANSFORM = torchvision.transforms.ToTensor()
 
 NUM_SAMPLE_PER_SCENE = 126
 NUM_IMAGE_PER_SAMPLE = 6
@@ -93,7 +94,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
 # The dataset class for labeled data.
 class LabeledDataset(torch.utils.data.Dataset):    
-    def __init__(self, image_folder, annotation_file, scene_index, transform, validation=True):
+    def __init__(self, image_folder, annotation_file, scene_index, transform=TRANSFORM, validation=True):
         """
         Args:
             image_folder (string): the location of the image folder
