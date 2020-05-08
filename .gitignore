@@ -140,3 +140,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Custom stuff
+
+*events.out*
+*core.*
+meta_tags.csv
+.code-workspace.code-workspace
