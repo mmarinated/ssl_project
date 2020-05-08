@@ -14,6 +14,7 @@ import utils
 from helper import convert_map_to_lane_map, convert_map_to_road_map
 from tqdm import tqdm
 
+TRANSFORM = torchvision.transforms.ToTensor()
 
 NUM_SAMPLE_PER_SCENE = 126
 NUM_IMAGE_PER_SAMPLE = 6
@@ -93,7 +94,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
 # The dataset class for labeled data.
 class LabeledDataset(torch.utils.data.Dataset):    
-    def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True, rotate=False):
+    def __init__(self, image_folder, annotation_file, scene_index, transform=TRANSFORM, validation=True):
         """
         Args:
             image_folder (string): the location of the image folder
@@ -102,13 +103,11 @@ class LabeledDataset(torch.utils.data.Dataset):
             transform (Transform): The function to process the image
             extra_info (Boolean): whether you want the extra information
         """
-        
         self.image_folder = image_folder
         self.annotation_dataframe = pd.read_csv(annotation_file)
         self.scene_index = scene_index
         self.transform = transform
-        self.extra_info = extra_info
-        self.rotate = rotate
+        self.validation = validation 
 
     def __len__(self):
         return self.scene_index.size * NUM_SAMPLE_PER_SCENE
@@ -122,47 +121,22 @@ class LabeledDataset(torch.utils.data.Dataset):
         for image_name in image_names:
             image_path = os.path.join(sample_path, image_name)
             image = Image.open(image_path)
-            if self.rotate:
-                if image_name == 'CAM_BACK.jpeg':
-                    image = torchvision.transforms.functional.rotate(image, 180)
-                elif image_name == 'CAM_BACK_LEFT.jpeg':
-                    image = torchvision.transforms.functional.rotate(image, 180)
-                elif image_name == 'CAM_BACK_RIGHT.jpeg':
-                    image = torchvision.transforms.functional.rotate(image, 180)
             images.append(self.transform(image))
+
         image_tensor = torch.stack(images)
 
-        data_entries = self.annotation_dataframe[(self.annotation_dataframe['scene'] == scene_id) & (self.annotation_dataframe['sample'] == sample_id)]
-        corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y','bl_y', 'br_y']].to_numpy()
-        categories = data_entries.category_id.to_numpy()
-        
-        ego_path = os.path.join(sample_path, 'ego.png')
-        ego_image = Image.open(ego_path)
-        ego_image = torchvision.transforms.functional.to_tensor(ego_image)
-        road_image = convert_map_to_road_map(ego_image)
-        
         target = {}
-        target['bounding_box'] = torch.as_tensor(corners).view(-1, 2, 4)
-        target['category'] = torch.as_tensor(categories)
+        if self.validation:
+            data_entries = self.annotation_dataframe[(self.annotation_dataframe['scene'] == scene_id) & (self.annotation_dataframe['sample'] == sample_id)]
+            corners = data_entries[['fl_x', 'fr_x', 'bl_x', 'br_x', 'fl_y', 'fr_y','bl_y', 'br_y']].to_numpy()
+            target['bounding_box'] = torch.as_tensor(corners).view(-1, 2, 4)
 
-        #tar_sem = utils.bounding_boxes_to_segmentation(800, 800, 10, target['bounding_box'], target['category'])
-        tar_sem_path = os.path.join(sample_path, "top_down_segm_carsonly_bw.png")
+            
+        # TODO FIXME changed top_down_segm_carsonly_bw to our fname CARS_top_down_segm
+        tar_sem_path = os.path.join(sample_path, "CARS_top_down_segm.png")
         tar_sem_image = Image.open(tar_sem_path)
         tar_sem = self.transform(tar_sem_image)
         
-        if self.extra_info:
-            actions = data_entries.action_id.to_numpy()
-            # You can change the binary_lane to False to get a lane with 
-            lane_image = convert_map_to_lane_map(ego_image, binary_lane=True)
-            
-            extra = {}
-            extra['action'] = torch.as_tensor(actions)
-            extra['ego_image'] = ego_image
-            extra['lane_image'] = lane_image
-
-            return image_tensor, target, tar_sem, road_image, extra
-        
-        else:
-            return image_tensor, target, tar_sem, road_image
+        return image_tensor, target, tar_sem, None
 
     

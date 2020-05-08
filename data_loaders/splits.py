@@ -4,6 +4,7 @@ import torchvision
 import numpy as np
 from ssl_project.constants import *
 from ssl_project.paths import *
+from ssl_project.utils import TRANSFORM
 
 from ssl_project.data_loaders.data_helper import LabeledDataset
 
@@ -26,7 +27,7 @@ def get_train_val_test_ds(
     print(f"train scene idces: {train_idces}, \nval scene idces: {val_idces}")
     
     if transform is None:
-        transform = torchvision.transforms.ToTensor()
+        transform = TRANSFORM
 
     ds_kwargs = dict(
         image_folder=image_folder, 

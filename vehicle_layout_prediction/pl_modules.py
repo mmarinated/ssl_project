@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from torchvision.datasets import MNIST
 import torch.optim as optim
 from torchvision import transforms
+import itertools
 
 from ssl_project.vehicle_layout_prediction.data_helper import LabeledDataset
 from ssl_project.data_loaders.helper import collate_fn
@@ -46,13 +47,30 @@ class ObjectDetectionModel(pl.LightningModule):
 
 
     def train_dataloader(self):
-        dataset = LabeledDataset(PATH_TO_DATA, f"{PATH_TO_DATA}/annotation.csv", LABELED_SCENE_INDEX[:self.n_scn_train], extra_info = False, transform = self.train_transform)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=4, collate_fn=collate_fn)
+        dataset = LabeledDataset(
+            PATH_TO_DATA, 
+            f"{PATH_TO_DATA}/annotation.csv", 
+            LABELED_SCENE_INDEX[:self.n_scn_train], 
+            transform=self.transform,
+            validation=False)
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, 
+            shuffle=True, num_workers=8, 
+            collate_fn=collate_fn, pin_memory=True, 
+            drop_last=True)
 
         return loader
     def val_dataloader(self):
-        dataset = LabeledDataset(PATH_TO_DATA, f"{PATH_TO_DATA}/annotation.csv", LABELED_SCENE_INDEX[self.n_scn_train:self.n_scn_train+self.n_scn_val], extra_info = False, transform = self.transform)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, collate_fn=collate_fn)
+        dataset = LabeledDataset(
+            PATH_TO_DATA, 
+            f"{PATH_TO_DATA}/annotation.csv",
+            LABELED_SCENE_INDEX[self.n_scn_train:self.n_scn_train+self.n_scn_val], 
+            transform=self.transform)
+        
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, 
+            shuffle=False, num_workers=8, 
+            collate_fn=collate_fn, pin_memory=True)
 
         return loader
 
@@ -85,12 +103,14 @@ class ObjectDetectionModel(pl.LightningModule):
     def test_epoch_end(self, outputs):
         return self.validation_epoch_end(outputs)
 
+    
 class EncoderDecoder(ObjectDetectionModel):
     def __init__(self, hparams):
         super(EncoderDecoder, self).__init__(hparams)
         self.resnet_style = hparams.resnet_style
         self.pretrained = hparams.pretrained
         self.threshold = hparams.threshold
+        self.path_to_pretrained_model = hparams.path_to_pretrained_model
 
     def forward(self, inp):
         out = self.model(inp)
@@ -130,7 +150,9 @@ class AutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
         super(AutoEncoder, self).__init__(hparams)
 
-        self.model = autoencoder(resnet_style=self.resnet_style, pretrained=self.pretrained)
+        self.model = autoencoder(
+            resnet_style=self.resnet_style, pretrained=self.pretrained,
+            path_to_pretrained_model=self.path_to_pretrained_model)
 
         self.criterion = nn.BCELoss()
 
@@ -166,13 +188,18 @@ class AutoEncoder(EncoderDecoder):
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
 
+    
 class VariationalAutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
         super(VariationalAutoEncoder, self).__init__(hparams)
 
-        self.model = vae(resnet_style=self.resnet_style, pretrained=self.pretrained)
+        self.model = vae(resnet_style=self.resnet_style, pretrained=self.pretrained,
+                         path_to_pretrained_model=self.path_to_pretrained_model)
+
         self.criterion = self.loss_function
         self.BCE = nn.BCELoss()
+
+        
     def loss_function(self, pred_maps, road_images, mu, logvar):
         criterion = nn.BCELoss()
         CE = criterion(pred_maps.squeeze(), road_images.float().squeeze())
@@ -212,13 +239,62 @@ class VariationalAutoEncoder(EncoderDecoder):
         threat_score = self.get_threat_score(pred_maps, targets)
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
+    
+    
+class VariationalAutoEncoderPretrainedHead(VariationalAutoEncoder):
+    def __init__(self, hparams):
+        super(VariationalAutoEncoderPretrainedHead, self).__init__(hparams)
+        if hparams.is_frozen:
+            self.model.encoder.requires_grad_(False)
+            
+        self.lr_encoder_multiplier = hparams.lr_encoder_multiplier
+    
+    def configure_optimizers(self):
+        ALL_EXPECTED_LAYERS = ['encoder', 'encoder_after_resnet', 'vae_decoder']
+        
+        GOT_LAYERS = [name for name, _ in self.model.named_children()]
+        assert set(GOT_LAYERS) == set(ALL_EXPECTED_LAYERS), f"expected={ALL_EXPECTED_LAYERS}, got={GOT_LAYERS}"
+        
+        optimizer_for_encoder = optim.Adam(self.model.encoder.parameters(), 
+           lr=self.lr_encoder_multiplier * self.learning_rate, 
+           weight_decay=self.weight_decay
+        )
+        scheduler_for_encoder = optim.lr_scheduler.StepLR(
+                                            optimizer_for_encoder, step_size=1, gamma=0.97)
+
+        
+        other_layers = (
+            child 
+            for key, child in self.model.named_children() 
+            if key in ALL_EXPECTED_LAYERS[1:]
+        )
+        
+        optimizer = optim.Adam(itertools.chain(*[model.parameters() for model in other_layers]), 
+                               lr=self.learning_rate, weight_decay=self.weight_decay)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+
+        return [optimizer_for_encoder, optimizer], [scheduler_for_encoder, scheduler]
+    
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        samples, targets, tar_sems, road_images = self.process_batch(batch)
+
+        pred_maps, mu, logvar = self.model(samples)
+        train_loss, CE, KLD = self.criterion(pred_maps, tar_sems, mu, logvar)
+
+        self.logger.log_metrics({"train_loss": train_loss / len(samples), 
+                                 "train_CE": CE / len(samples), 
+                                 "train_KLD": KLD / len(samples) }, 
+                                self.global_step)
+        return {"loss": train_loss, "n": len(samples)}
+    
 
 
 class MMDVariationalAutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
         super(MMDVariationalAutoEncoder, self).__init__(hparams)
 
-        self.model = mmd_vae(resnet_style=self.resnet_style, pretrained=self.pretrained)
+        self.model = mmd_vae(resnet_style=self.resnet_style, pretrained=self.pretrained,
+                             path_to_pretrained_model=self.path_to_pretrained_model)
 
     def training_step(self, batch, batch_idx):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
@@ -257,6 +333,8 @@ class MMDVariationalAutoEncoder(EncoderDecoder):
         threat_score = self.get_threat_score(pred_maps, targets)
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": b_size }
+    
+
 class VariationalAutoEncoderConcat(EncoderDecoder):
     def __init__(self, hparams):
         super(VariationalAutoEncoderConcat, self).__init__(hparams)

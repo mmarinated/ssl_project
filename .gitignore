@@ -3,7 +3,11 @@
 *tmp*
 *.jpg
 
+**/*checkpoint*
 checkpoints/
+**/*logs
+ssl_ideas/lr_find_temp.ckpt
+**/tb_logs
 
 # data
 data/

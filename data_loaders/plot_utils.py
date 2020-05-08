@@ -38,19 +38,27 @@ def plot_road(road_image, axis=None):
     axis.imshow(road_image, cmap='binary')
     return axis
 
-def plot_bb(road_image, target_b, b_slc=slice(None), axis=None):
+def plot_bb(road_image, target_b, b_slc=slice(None), color=None, axis=None):
     """
+    color
+        if None plots category colors. Pass your own to override
+    
     Note:
         The center of image is 400 * 400
     """
     if axis is None:
         fig, axis = plt.subplots()
     color_list = ['b', 'g', 'orange', 'c', 'm', 'y', 'k', 'w', 'r']
-    plot_road(road_image, axis)
+    if road_image is not None:
+        plot_road(road_image, axis)
     # The ego car position
     axis.plot(400, 400, 'x', color="red")
 
-    bb_and_category = list(zip(to_np(target_b['bounding_box']), to_np(target_b['category'])))
-
+    if isinstance(target_b, dict):
+        bb_and_category = list(zip(to_np(target_b['bounding_box']), to_np(target_b['category'])))
+    else:
+        bb_and_category = list(zip(to_np(target_b), np.ones(len(target_b), dtype=int)))
+        
+    
     for bb, typ in np.array(bb_and_category)[b_slc]:
-        draw_box(axis, bb, color=color_list[typ])
+        draw_box(axis, bb, color=(color_list[typ] if color is None else color))
