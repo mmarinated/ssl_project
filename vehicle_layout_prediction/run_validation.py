@@ -18,7 +18,7 @@ if __name__ == "__main__":
     model = VariationalAutoEncoder(hparams)
     model.load_state_dict(torch.load(path, map_location="cpu")['state_dict'])
     trainer = pl.Trainer()
-
+    
     torch.save(model.model.state_dict(), "submission2_object_detection_state_dict.pt")
     for t in [0.3,0.4,0.5]:
         print(t)

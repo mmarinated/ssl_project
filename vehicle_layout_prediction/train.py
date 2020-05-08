@@ -7,19 +7,20 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 if __name__ == "__main__":
     hparams =  Namespace(**{"resnet_style": "18",
                           "pretrained": False,
-                          "threshold": 0.3,
+                          "threshold": 0.4,
                           "n_scn_train": 24,
                           "n_scn_val": 3, 
                           "n_scn_test": 1,
                           "batch_size": 8,
                           "learning_rate": 0.0001,
-                          "weight_decay": 0.00001})
+                          "weight_decay": 0.00001,
+                          "random_transform": False})
 
-    experiment_name = "vae_final_test_thresh_0.3"
+    experiment_name = "vae_with_blur"
 
     checkpoint_callback = ModelCheckpoint(
-                        filepath="./checkpoints/" + experiment_name + "/checkpoint_{epoch}_{val_ts:.3f}",
-                        save_top_k=3,
+                        filepath="./checkpoints/" + experiment_name + "/checkpoint_{epoch}_{val_ts:.6f}",
+                        save_top_k=5,
                         verbose=False,
                         monitor='val_ts',
                         mode='max',
@@ -32,6 +33,6 @@ if __name__ == "__main__":
     logger = pl.loggers.TensorBoardLogger("tb_logs", experiment_name)
     logger.log_hyperparams(hparams)
     model = VariationalAutoEncoder(hparams)
-    trainer = pl.Trainer(logger=logger, gpus=1, max_epochs=50, checkpoint_callback=checkpoint_callback)
+    trainer = pl.Trainer(logger=logger, gpus=1, max_epochs=100, checkpoint_callback=checkpoint_callback)
 
     trainer.fit(model)
