@@ -37,9 +37,10 @@ Parts of code sourced from:
 ## Bounding Box Predictions
 
 **Libraries used**<br>
-- [Pythorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
+- [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
 - [FastAI](https://github.com/fastai/fastai)
 - [Kornia](https://kornia.github.io/)
+- [OpenCV](https://opencv.org/)
 
 **Code**<br>
 - Folder vehicle_layout_predictions
