@@ -13,18 +13,18 @@ Papers:
 
 ## Projections
 
-Transfer labels from top down view to camera photos using projection geometry.
-https://kornia.github.io/
+Transfer labels from top down view to camera photos using projection geometry.<br>
+https://kornia.github.io/<br>
 
 
 ## Road Layout Prediction
 
-Refer to road_layout_prediction/ for code used to train and test road layout prediction models.
+Refer to road_layout_prediction/ for code used to train and test road layout prediction models. <br>
 Contents:
-road_layout_prediction.ipynb - Main notebook, Training & Evaluation
-modelszoo.py - Model Architectures and Loss functions
-simclr*, contrastive* - Code related to SimCLR implementaion for unsupervised training
+road_layout_prediction.ipynb - Main notebook, Training & Evaluation<br>
+modelszoo.py - Model Architectures and Loss functions<br>
+simclr*, contrastive* - Code related to SimCLR implementaion for unsupervised training<br>
 
-Parts of code sourced from: 
-https://github.com/Chenyang-Lu/mono-semantic-occupancy
-https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb
+Parts of code sourced from: <br>
+https://github.com/Chenyang-Lu/mono-semantic-occupancy<br>
+https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb<br>
