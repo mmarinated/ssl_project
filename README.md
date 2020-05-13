@@ -34,6 +34,19 @@ Parts of code sourced from:
 - https://github.com/mdiephuis/SimCLR/blob/master/loss.py <br>
 - https://github.com/guptv93/saycam-metric-learning/blob/master/data_util/simclr_transforms.py <br>
 
+## Bounding Box Predictions
+
+**Libraries used**<br>
+- [Pythorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
+- [FastAI](https://github.com/fastai/fastai)
+- [Kornia](https://kornia.github.io/)
+
+**Code**<br>
+- Folder vehicle_layout_predictions
+  - model_zoo.py - Model architectures used
+  - pl_modules.py - Pytorch lightning modules
+  - train.py - Example training code
+- Notebook fastai_final_for_cars.ipynb
 ## Animations
 
 ### Predictions
