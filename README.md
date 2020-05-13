@@ -2,12 +2,13 @@
 
 Final project on Bird's Eye Prediction for DL course
 
-Papers:
-- InfoVAE (https://arxiv.org/abs/1706.02262) https://ermongroup.github.io/blog/a-tutorial-on-mmd-variational-autoencoders/
+Papers and useful links:
+- InfoVAE (https://arxiv.org/abs/1706.02262) <br>
+- Understanding MMD: https://ermongroup.github.io/blog/a-tutorial-on-mmd-variational-autoencoders/ <br>
 - MonoOccupancy (https://arxiv.org/pdf/1804.02176.pdf)
 - UNet (https://arxiv.org/abs/1505.04597)
 - Monocular Plan View Networks for Autonomous Driving: https://arxiv.org/pdf/1905.06937.pdf
-- review of papers on 3D object detection : https://towardsdatascience.com/monocular-3d-object-detection-in-autonomous-driving-2476a3c7f57e
+- Review of papers on 3D object detection : https://towardsdatascience.com/monocular-3d-object-detection-in-autonomous-driving-2476a3c7f57e
 - Inverse perspective mapping (IPM): from monocular images to Birds-eye-view (BEV) images
 
 
