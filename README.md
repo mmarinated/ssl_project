@@ -31,3 +31,5 @@ Parts of code sourced from:
 
 - https://github.com/Chenyang-Lu/mono-semantic-occupancy<br>
 - https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb<br>
+- https://github.com/mdiephuis/SimCLR/blob/master/loss.py <br>
+- https://github.com/guptv93/saycam-metric-learning/blob/master/data_util/simclr_transforms.py <br>
