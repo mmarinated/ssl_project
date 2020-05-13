@@ -6,6 +6,8 @@ from ssl_project.constants import CATEGORY_TO_IDX, EGO_IMAGE_SIZE
 from ssl_project.utils import to_np
 from joblib import Parallel, delayed
 
+from torchvision.utils import save_image
+
 import cv2
 from ssl_project.data_loaders.data_helper import UnlabeledDataset, LabeledDataset
 
@@ -23,6 +25,30 @@ VALUE_TO_CATEGORY.update(zip(EGO_CLASS, EGO_NAMES))
 x, y = np.meshgrid(np.arange(EGO_IMAGE_SIZE), np.arange(EGO_IMAGE_SIZE))
 xy_N2 = np.vstack((x.ravel(), y.ravel())).T
 
+
+def create_warped_glued_photos(prefix="WARPED_3WW_", n_jobs=8, slc=slice(None), debug=False):
+#     TMP = []
+    
+    def _save_warped(idx):
+        labeled_trainset = LabeledDataset()
+        scene_id, sample_id, path = labeled_trainset._get_ids_and_path(idx)
+        photos_63hw = labeled_trainset._get_images(path)
+#         print(photos_63hw.shape)
+        warped_3WW = proj.get_warped_3WW(photos_63hw, offset=5)
+#         print(f"{path}/{prefix}top_down_segm.png")
+        save_image(warped_3WW, f"{path}/{prefix}top_down_segm.png")
+#         TMP.append((idx, f"{path}/{prefix}top_down_segm.png"))
+
+    labeled_trainset = LabeledDataset()
+
+    if debug:
+        for idx in range(len(labeled_trainset))[slc]:
+            _save_warped(idx)
+    else:
+        Parallel(n_jobs=n_jobs)(
+            delayed(_save_warped)(idx) 
+            for idx in range(len(labeled_trainset))[slc]
+        )
 
 def create_cars_masks(prefix="CARS_", n_jobs=8, slc=slice(None), debug=False):
     true_categories = set(CATEGORY_TO_IDX.keys())

@@ -184,6 +184,46 @@ class LabeledDataset(AbstractLabeledDataset):
         # self.cache[index] = output
         
         return output
+    
+class FastLabeledDataset(AbstractLabeledDataset):
+    def __init__(self, image_folder, annotation_file, scene_index, transform, extra_info=True):
+        """
+        Args:
+            image_folder (string): the location of the image folder
+            annotation_file (string): the location of the annotations
+            scene_index (list): a list of scene indices for the unlabeled data 
+            transform (Transform): The function to process the image
+            extra_info (Boolean): whether you want the extra information
+        """
+        super().__init__(image_folder, annotation_file, scene_index, transform, extra_info)
+        self.COLOR_OF_CAR_PIXEL = 0.003921569
+        
+    def _get_car_map(self, sample_path):
+        # ADDED load cars map
+        cars_map_path = os.path.join(sample_path, 'CARS_top_down_segm.png')
+        cars_map = Image.open(cars_map_path)
+        cars_map = torchvision.transforms.functional.to_tensor(cars_map)
+        return  cars_map / self.COLOR_OF_CAR_PIXEL
+    
+    def __getitem__(self, index):
+        """
+        return 
+            image_tensor, target, road_image, (extra or None)
+        """
+        # if index in self.cache:
+        #     return self.cache[index]
+        
+        scene_id, sample_id, sample_path = self._get_ids_and_path(index)
+        image_63hw = self._get_images(sample_path)
+        target, road_image, ego_image, data_entries = self._get_target_road_ego_image(scene_id, sample_id, sample_path)
+        target["cars_map"] = self._get_car_map(sample_path)
+        
+        output = (image_63hw, target, road_image, 
+                self._get_extra(data_entries, ego_image) if self.extra_info else None)
+        
+        # self.cache[index] = output
+        
+        return output
 
 class FastLabeledRoadDataset(AbstractLabeledDataset):
     def __init__(self, road_image_name="ROAD_top_down_segm", *args, **kwargs):

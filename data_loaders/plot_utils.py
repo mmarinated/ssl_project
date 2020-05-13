@@ -5,7 +5,7 @@ from ssl_project.data_loaders.helper import draw_box
 
 from ssl_project.utils import to_np
 
-def plot_photos(photos_n, axis=None):
+def plot_photos(photos_n, axis=None, **kwargs):
     """
     Plots 1-6 photos.
 
@@ -18,7 +18,10 @@ def plot_photos(photos_n, axis=None):
     """
     if axis is None:
         fig, axis = plt.subplots()
-    axis.imshow(torchvision.utils.make_grid(photos_n, nrow=3).numpy().transpose(1, 2, 0))
+    axis.imshow(
+        torchvision.utils.make_grid(photos_n, nrow=3).numpy().transpose(1, 2, 0),
+        **kwargs
+    )
     # plt.axis('off')
 
 def plot_road(road_image, axis=None):

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 # from torchsummary import summary
 import torchvision
 from torchvision import models, transforms
-
+from ssl_project.constants import CAM_NAMES
 
 def encoder(resnet_style='18', pretrained=False, path_to_pretrained_model=None):
     if path_to_pretrained_model is None:
@@ -250,6 +250,37 @@ class vae(nn.Module):
         self.vae_decoder.summarize(z,offset=' '*5)
         print(offset+'----')
         print(offset+'Output Size:{}'.format(pred_map.shape))
+
+class vae_multiple_encoders(nn.Module):
+    def __init__(self, resnet_style='18', pretrained=False, path_to_pretrained_model=None):
+        super().__init__()
+        self.encoders = encoder(resnet_style, pretrained, path_to_pretrained_model)
+        self.encoder_after_resnet = encoder_after_resnet()
+        self.vae_decoder = vae_decoder()
+
+    def reparameterize(self, is_training, mu, logvar):
+        if is_training:
+            std = torch.exp(0.5*logvar)
+            eps = torch.randn_like(std)
+            return eps.mul(std).add_(mu)
+        else:
+            return mu
+
+    def forward(self, x, defined_mu=None):
+        n_img = x.shape[1]
+        assert n_img == 6, f"Expected 6 photos, got {n_img}" 
+        z_arr = []
+        for i, cam_name in enumerate(CAM_NAMES): 
+            z_arr.append(self.encoders[cam_name](x[:,i]))
+        x = torch.cat(z_arr,1)
+        
+        mu, logvar = self.encoder_after_resnet(x)
+        z = self.reparameterize(self.train(), mu, logvar)
+        if defined_mu is not None:
+            z = defined_mu
+        pred_map = self.vae_decoder(z)
+        return pred_map, mu, logvar
+    
 
 
 class encoder_after_resnet_concat(nn.Module):

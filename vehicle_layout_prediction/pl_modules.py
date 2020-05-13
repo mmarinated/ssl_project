@@ -10,13 +10,15 @@ import itertools
 from ssl_project.vehicle_layout_prediction.data_helper import LabeledDataset
 from ssl_project.data_loaders.helper import collate_fn
 from ssl_project.paths import PATH_TO_DATA
+from collections import Counter, defaultdict
 
 from ssl_project.constants import LABELED_SCENE_INDEX
 import os
-from modelzoo import vae, autoencoder, vae_concat, mmd_vae, compute_kernel, mmd_loss_function
+from modelzoo import vae, autoencoder, vae_concat, mmd_vae, compute_kernel, mmd_loss_function, vae_multiple_encoders
 from ssl_project.utils import compute_ats_bounding_boxes, get_bounding_boxes_from_seg
 from argparse import Namespace
 from pytorch_lightning.callbacks import ModelCheckpoint
+from ssl_project.vehicle_layout_prediction.bb_utils import ProcessSegmentationMaps
 
 class ObjectDetectionModel(pl.LightningModule):
     def __init__(self, hparams):
@@ -90,40 +92,73 @@ class EncoderDecoder(ObjectDetectionModel):
         self.pretrained = hparams.pretrained
         self.threshold = hparams.threshold
         self.path_to_pretrained_model = hparams.path_to_pretrained_model
+        self.process_segm = ProcessSegmentationMaps()
 
     def forward(self, inp):
         out = self.model(inp)
         return out
 
-    def get_threat_score(self, pred_maps,targets):
-
+    def get_threat_score(self, pred_maps, targets, threshold=None):
+        if threshold is None:
+            threshold = self.threshold
+        
         threat_score = 0
+        bbs = []
         for pred_map, target in zip(pred_maps, targets):
-            bb_pred = get_bounding_boxes_from_seg(pred_map > self.threshold, 10, 800, 800)
-            ts_road_map = compute_ats_bounding_boxes(bb_pred.cpu(), target["bounding_box"].cpu())
+            bbs_k24 = self.process_segm.transform(pred_map, threshold=threshold)
+            if len(bbs_k24) > 0:
+                bbs_k24 = self.process_segm.convert_to_bb_space(bbs_k24, axis=-2)
+            else:
+                bbs_k24 = torch.zeros((1,2,4))
+#             bb_pred = get_bounding_boxes_from_seg(pred_map > threshold, 10, 800, 800)
+            ts_road_map = compute_ats_bounding_boxes(bbs_k24.cpu(), target["bounding_box"].cpu())
             threat_score += ts_road_map
 
         return threat_score
 
     def validation_epoch_end(self, outputs):
-        avg_val_loss = 0
-        avg_val_ts = 0
-        n = 0
-        for out in outputs:
-            avg_val_loss += out["val_loss"]
-            avg_val_ts += out["val_ts"]
-            n += out["n"]
+        sum_dict = sum([Counter(d) for d in outputs], Counter())
+        sum_n = sum_dict.pop("n")
+        avg_dict = {f"avg_{k}": v / sum_n for k, v in sum_dict.items()}
+        
+        if "avg_val_ts" not in avg_dict:
+            avg_dict["avg_val_ts"] = 0
+            
+        return {"val_ts": avg_dict["avg_val_ts"], 
+                "log": avg_dict, 
+                "progress_bar": avg_dict}
+        
+#         avg_val_loss = 0
+#         avg_val_ts = 0
+#         n = 0
+#         # ADDED
+#         dict_avg = defaultdict(float)
+# #         {f"AVG_{key}": 0 for key in outputs[0].keys()}
+        
+#         for out in outputs:
+#             avg_val_loss += out["val_loss"]
+#             avg_val_ts += out["val_ts"]
+#             n += out["n"]
+#             # ADDED
+#             for key in out.keys():
+#                 dict_avg[key] += out[key]
 
-        if n > 0:
-            avg_val_loss /= n
-            avg_val_ts /= n
-        else:
-            avg_val_loss = 0
-            avg_val_ts = 0
-
-        return {"val_ts": avg_val_ts, 
-                "log": {"avg_val_loss": avg_val_loss, "avg_val_ts": avg_val_ts}, 
-                "progress_bar": {"avg_val_loss": avg_val_loss, "avg_val_ts": avg_val_ts}}
+#         if n > 0:
+#             avg_val_loss /= n
+#             avg_val_ts /= n
+#             for key in dict_avg.keys():
+#                 dict_avg[key] /= n
+#         else:
+#             avg_val_loss = 0
+#             avg_val_ts = 0
+#             for key in dict_avg.keys():
+#                 dict_avg[key] = 0
+                
+#         log_dict = {f"avg_{k}": v for k, v in log_dict.items()}
+             
+#         return {"val_ts": log_dict["avg_val_ts"], 
+#                 "log": log_dict, 
+#                 "progress_bar": log_dict}
         
 class AutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
@@ -152,7 +187,7 @@ class AutoEncoder(EncoderDecoder):
             avg_training_loss += out["loss"]
             n += out["n"]
 
-        avg_training_loss /= n
+        avg_training_loss /= navg_val_ts
 
         return {"log": {"avg_train_loss": avg_training_loss}}
 
@@ -162,11 +197,14 @@ class AutoEncoder(EncoderDecoder):
         pred_maps = self.model(samples)
 
         val_loss = self.criterion(pred_maps.squeeze(), tar_sems.float().squeeze())
-
-        threat_score = self.get_threat_score(pred_maps, targets)
-
-        return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
-
+        out_d = {"val_loss": val_loss, "n": len(samples) }
+        
+        for threshold in [0.1, 0.3, 0.5, 0.7]:
+            out_d[f"val_ts_{threshold}"] = self.get_threat_score(pred_maps, targets, threshold)
+        
+        out_d[f"val_ts"] = out_d[f"val_ts_{0.5}"]
+        
+        return out_d
     
 class VariationalAutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
@@ -223,38 +261,66 @@ class VariationalAutoEncoder(EncoderDecoder):
 class VariationalAutoEncoderPretrainedHead(VariationalAutoEncoder):
     def __init__(self, hparams):
         super(VariationalAutoEncoderPretrainedHead, self).__init__(hparams)
-        if hparams.is_frozen:
-            self.model.encoder.requires_grad_(False)
+        self.has_all_encoders = hparams.has_all_encoders
+        if self.has_all_encoders:
+            self.model = vae_multiple_encoders(
+                resnet_style=self.resnet_style, pretrained=self.pretrained,
+                path_to_pretrained_model=self.path_to_pretrained_model)
+        self.is_frozen = hparams.is_frozen
+        if self.is_frozen:
+            if self.has_all_encoders:
+                self.model.encoders.requires_grad_(False)
+            else:
+                self.model.encoder.requires_grad_(False)
             
         self.lr_encoder_multiplier = hparams.lr_encoder_multiplier
     
     def configure_optimizers(self):
-        ALL_EXPECTED_LAYERS = ['encoder', 'encoder_after_resnet', 'vae_decoder']
-        
-        GOT_LAYERS = [name for name, _ in self.model.named_children()]
-        assert set(GOT_LAYERS) == set(ALL_EXPECTED_LAYERS), f"expected={ALL_EXPECTED_LAYERS}, got={GOT_LAYERS}"
-        
-        optimizer_for_encoder = optim.Adam(self.model.encoder.parameters(), 
-           lr=self.lr_encoder_multiplier * self.learning_rate, 
-           weight_decay=self.weight_decay
-        )
-        scheduler_for_encoder = optim.lr_scheduler.StepLR(
-                                            optimizer_for_encoder, step_size=1, gamma=0.97)
+        if self.has_all_encoders:
+            ALL_EXPECTED_LAYERS = ['encoders', 'encoder_after_resnet', 'vae_decoder']
 
-        
-        other_layers = (
-            child 
-            for key, child in self.model.named_children() 
-            if key in ALL_EXPECTED_LAYERS[1:]
-        )
+            GOT_LAYERS = [name for name, _ in self.model.named_children()]
+            assert set(GOT_LAYERS) == set(ALL_EXPECTED_LAYERS), f"expected={ALL_EXPECTED_LAYERS}, got={GOT_LAYERS}"
+
+            optimizer_for_encoder = optim.Adam(self.model.encoders.parameters(), 
+               lr=self.lr_encoder_multiplier * self.learning_rate, 
+               weight_decay=self.weight_decay
+            )
+            scheduler_for_encoder = optim.lr_scheduler.StepLR(
+                                                optimizer_for_encoder, step_size=1, gamma=0.97)
+            other_layers = (
+                child 
+                for key, child in self.model.named_children() 
+                if key in ALL_EXPECTED_LAYERS[1:]
+            )
+        else:
+            ALL_EXPECTED_LAYERS = ['encoder', 'encoder_after_resnet', 'vae_decoder']
+
+            GOT_LAYERS = [name for name, _ in self.model.named_children()]
+            assert set(GOT_LAYERS) == set(ALL_EXPECTED_LAYERS), f"expected={ALL_EXPECTED_LAYERS}, got={GOT_LAYERS}"
+
+            optimizer_for_encoder = optim.Adam(self.model.encoder.parameters(), 
+               lr=self.lr_encoder_multiplier * self.learning_rate, 
+               weight_decay=self.weight_decay
+            )
+            scheduler_for_encoder = optim.lr_scheduler.StepLR(
+                                                optimizer_for_encoder, step_size=1, gamma=0.97)
+            other_layers = (
+                child 
+                for key, child in self.model.named_children() 
+                if key in ALL_EXPECTED_LAYERS[1:]
+            )
         
         optimizer = optim.Adam(itertools.chain(*[model.parameters() for model in other_layers]), 
                                lr=self.learning_rate, weight_decay=self.weight_decay)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
-
-        return [optimizer_for_encoder, optimizer], [scheduler_for_encoder, scheduler]
+        
+        if self.is_frozen:
+            return [optimizer], [scheduler]
+        else:
+            return [optimizer_for_encoder, optimizer], [scheduler_for_encoder, scheduler]
     
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx, optimizer_idx=0):
         samples, targets, tar_sems, road_images = self.process_batch(batch)
 
         pred_maps, mu, logvar = self.model(samples)
