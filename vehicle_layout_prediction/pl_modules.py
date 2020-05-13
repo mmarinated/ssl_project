@@ -20,6 +20,8 @@ from argparse import Namespace
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torchvision.models.detection import FasterRCNN, fasterrcnn_resnet50_fpn, FasterRCNN
 from simclr_transforms import *
+from ssl_project.vehicle_layout_prediction.bb_utils import ProcessSegmentationMaps
+
 class ObjectDetectionModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -91,7 +93,7 @@ class ObjectDetectionModel(pl.LightningModule):
         samples, targets, tar_sems, road_images = batch
         device = samples[0].device
         samples = torch.stack(samples).to(device)
-        road_images = torch.stack(road_images).to(device)
+        road_images = None#torch.stack(road_images).to(device)
         tar_sems = torch.stack(tar_sems).to(device)
         tar_sems = tar_sems > 0
 
@@ -111,6 +113,7 @@ class EncoderDecoder(ObjectDetectionModel):
         self.pretrained = hparams.pretrained
         self.threshold = hparams.threshold
         self.path_to_pretrained_model = hparams.path_to_pretrained_model
+        self.process_segm = ProcessSegmentationMaps()
 
     def forward(self, inp):
         out = self.model(inp)
@@ -120,8 +123,13 @@ class EncoderDecoder(ObjectDetectionModel):
 
         threat_score = 0
         for pred_map, target in zip(pred_maps, targets):
-            bb_pred = get_bounding_boxes_from_seg(pred_map > self.threshold, 10, 800, 800)
-            ts_road_map = compute_ats_bounding_boxes(bb_pred.cpu(), target["bounding_box"].cpu())
+            bbs_k24 = self.process_segm.transform(pred_map, threshold=self.threshold)
+            if len(bbs_k24) > 0:
+                bbs_k24 = self.process_segm.convert_to_bb_space(bbs_k24, axis=-2)
+            else:
+                bbs_k24 = torch.zeros((1,2,4))
+
+            ts_road_map = compute_ats_bounding_boxes(bbs_k24.cpu(), target["bounding_box"].cpu())
             threat_score += ts_road_map
 
         return threat_score
