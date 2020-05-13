@@ -19,12 +19,14 @@ https://kornia.github.io/<br>
 
 ## Road Layout Prediction
 
-Refer to road_layout_prediction/ for code used to train and test road layout prediction models. <br>
-Contents:
-road_layout_prediction.ipynb - Main notebook, Training & Evaluation<br>
-modelszoo.py - Model Architectures and Loss functions<br>
-simclr*, contrastive* - Code related to SimCLR implementaion for unsupervised training<br>
+Refer to road_layout_prediction/ for code used to train and test road layout prediction models.
 
-Parts of code sourced from: <br>
-https://github.com/Chenyang-Lu/mono-semantic-occupancy<br>
-https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb<br>
+**Contents**:<br>
+- road_layout_prediction.ipynb - Main notebook, Training & Evaluation<br>
+- modelszoo.py - Model Architectures and Loss functions<br>
+- simclr*, contrastive* - Code related to SimCLR implementaion for unsupervised training<br>
+
+Parts of code sourced from:
+
+- https://github.com/Chenyang-Lu/mono-semantic-occupancy<br>
+- https://github.com/napsternxg/pytorch-practice/blob/master/Pytorch%20-%20MMD%20VAE.ipynb<br>
