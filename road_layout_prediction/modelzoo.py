@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# from torchsummary import summary
 import torchvision
 from torchvision import models, transforms
 
@@ -9,12 +8,20 @@ class encoder(nn.Module):
     
     def __init__(self, resnet_style='18', pretrained=False):
         super(encoder, self).__init__()
+        
+        self.weights_path = None
         self.resnet_style = resnet_style
+        
+        if isinstance(pretrained,str):
+            self.weights_path = pretrained
+            pretrained = False
+            
         self.pretrained = pretrained
+                   
         if self.resnet_style == '18' and self.pretrained==False:
             resnet = models.resnet18(pretrained=False)
             
-        elif self.resnet_style == '18' and self.pretrained==True:
+        if self.resnet_style == '18' and self.pretrained==True:
             resnet = models.resnet18(pretrained=True)
             
         if self.resnet_style == '50' and self.pretrained==False:
@@ -29,7 +36,13 @@ class encoder(nn.Module):
             self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1])
         elif self.resnet_style == '50':
             self.resnet_encoder = nn.Sequential(*list(resnet.children())[:-1], nn.Conv2d(2048, 512, 1))
-
+        
+        if self.weights_path is not None:
+            temp_model=simclr_model()
+            temp_model.load_state_dict(torch.load(self.weights_path)['state_dict'])
+            self.resnet_encoder.load_state_dict(temp_model.encoder.resnet_encoder.state_dict())
+            print('Successfully loaded weights from {}'.format(self.weights_path))
+            
     def forward(self, x):
         x = self.resnet_encoder(x)
         return x
@@ -39,6 +52,7 @@ class encoder(nn.Module):
         print(offset+'resnet_style: {}, pretrained: {}'.format(self.resnet_style,self.pretrained))
         print(offset+'Passed Input Size:{}'.format(x.shape))
         print(offset+'Output Size:{}'.format(self.forward(x).shape))
+
     
 class decoder(nn.Module):
     def __init__(self):
@@ -379,3 +393,39 @@ def mmd_loss_function(x, y):
     xy_kernel = compute_kernel(x, y)
     mmd = x_kernel.mean() + y_kernel.mean() - 2*xy_kernel.mean()
     return mmd
+
+
+
+class simclr_model(torch.nn.Module):
+    
+    def __init__(self, resnet_style='18', pretrained=False):
+        super(simclr_model, self).__init__()
+        self.encoder = encoder(resnet_style=resnet_style, pretrained=pretrained)
+        self.pooling = nn.AdaptiveAvgPool2d(output_size=(1, 1))
+        self.projection = nn.Sequential(
+            nn.Linear(512,128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128,16)
+        )
+        
+    def forward(self, x):
+        h = self.encoder(x)
+        h = self.pooling(h)
+        h = h.reshape(-1,512)
+        z = self.projection(h)
+        return z
+    
+    def summarize(self,x,offset=''):
+        print(offset+'Class: {}'.format(type(self).__name__))
+        print(offset+'Passed Input Size:{}'.format(x.shape))
+        h = self.encoder(x)
+        print(offset+'----')
+        self.encoder.summarize(x,offset=' '*5)
+        print(offset+'----')
+        print(offset+'Hidden state shape: {}'.format(h.shape))
+        h = self.pooling(h)
+        print(offset+'Pooled Hidden state shape: {}'.format(h.shape))
+        h = h.reshape(-1,512)
+        print(offset+'Reshaped Hidden state shape: {}'.format(h.shape))
+        z = self.projection(h)
+        print(offset+'Output shape:{}'.format(z.shape))
