@@ -217,7 +217,7 @@ class vae(nn.Module):
         x = torch.cat(z_arr,1)
         
         mu, logvar = self.encoder_after_resnet(x)
-        z = self.reparameterize(self.train(), mu, logvar)
+        z = self.reparameterize(self.training, mu, logvar)
         if defined_mu is not None:
             z = defined_mu
         pred_map = self.vae_decoder(z)

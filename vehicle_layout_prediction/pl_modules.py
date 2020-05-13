@@ -5,6 +5,7 @@ import torchvision
 import pytorch_lightning as pl
 from torchvision.datasets import MNIST
 import torch.optim as optim
+from torchvision import transforms
 import itertools
 
 from ssl_project.vehicle_layout_prediction.data_helper import LabeledDataset
@@ -18,13 +19,25 @@ from modelzoo import vae, autoencoder, vae_concat, mmd_vae, compute_kernel, mmd_
 from ssl_project.utils import compute_ats_bounding_boxes, get_bounding_boxes_from_seg
 from argparse import Namespace
 from pytorch_lightning.callbacks import ModelCheckpoint
+from torchvision.models.detection import FasterRCNN, fasterrcnn_resnet50_fpn, FasterRCNN
+from simclr_transforms import *
 from ssl_project.vehicle_layout_prediction.bb_utils import ProcessSegmentationMaps
 
 class ObjectDetectionModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         assert(hparams.n_scn_train + hparams.n_scn_val + hparams.n_scn_test == len(LABELED_SCENE_INDEX) )
-        
+        self.hparams = hparams
+        if (hparams.random_transform):
+            self.train_transform = transforms.Compose([
+                                        #transforms.RandomGrayscale(p=0.5),
+                                        transforms.RandomHorizontalFlip(),
+                                        get_color_distortion(s=0.5),
+                                        RandomGaussianBluring(kernel_size=5),
+                                        transforms.ToTensor(),
+                                    ])
+        else:
+            self.train_transform = torchvision.transforms.ToTensor()
         self.transform = torchvision.transforms.ToTensor()
 
         self.n_scn_train = hparams.n_scn_train
@@ -34,6 +47,7 @@ class ObjectDetectionModel(pl.LightningModule):
         self.batch_size = hparams.batch_size
         self.learning_rate = hparams.learning_rate
         self.weight_decay = hparams.weight_decay
+
 
     def train_dataloader(self):
         dataset = LabeledDataset(
@@ -67,7 +81,9 @@ class ObjectDetectionModel(pl.LightningModule):
 #        dataset = LabeledDataset(PATH_TO_DATA, f"{PATH_TO_DATA}/annotations.csv", LABELED_SCENE_INDEX[self.n_scn_train+self.n_scn_val:], extra_info = False)
 #        loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4, collate_fn=collate_fn)
 
-    
+    def test_dataloader(self):
+        return self.val_dataloader()
+
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
@@ -78,11 +94,17 @@ class ObjectDetectionModel(pl.LightningModule):
         samples, targets, tar_sems, road_images = batch
         device = samples[0].device
         samples = torch.stack(samples).to(device)
-        road_images = None #torch.stack(road_images).to(device)
+        road_images = None#torch.stack(road_images).to(device)
         tar_sems = torch.stack(tar_sems).to(device)
         tar_sems = tar_sems > 0
 
         return samples, targets, tar_sems, road_images 
+
+    def test_step(self, batch, batch_idx):
+        return self.validation_step(batch, batch_idx)
+
+    def test_epoch_end(self, outputs):
+        return self.validation_epoch_end(outputs)
 
     
 class EncoderDecoder(ObjectDetectionModel):
@@ -110,7 +132,6 @@ class EncoderDecoder(ObjectDetectionModel):
                 bbs_k24 = self.process_segm.convert_to_bb_space(bbs_k24, axis=-2)
             else:
                 bbs_k24 = torch.zeros((1,2,4))
-#             bb_pred = get_bounding_boxes_from_seg(pred_map > threshold, 10, 800, 800)
             ts_road_map = compute_ats_bounding_boxes(bbs_k24.cpu(), target["bounding_box"].cpu())
             threat_score += ts_road_map
 
@@ -333,6 +354,7 @@ class VariationalAutoEncoderPretrainedHead(VariationalAutoEncoder):
         return {"loss": train_loss, "n": len(samples)}
     
 
+
 class MMDVariationalAutoEncoder(EncoderDecoder):
     def __init__(self, hparams):
         super(MMDVariationalAutoEncoder, self).__init__(hparams)
@@ -427,3 +449,139 @@ class VariationalAutoEncoderConcat(EncoderDecoder):
 
         return {"val_loss": val_loss, "val_ts": threat_score, "n": len(samples) }
         
+
+class VAEFasterRCNN(ObjectDetectionModel):
+    def __init__(self, hparams):
+        super(VAEFasterRCNN, self).__init__(hparams)
+
+        self.resnet_style = hparams.resnet_style
+        self.threshold = hparams.threshold
+
+        self.vae = vae(resnet_style=self.resnet_style, pretrained=False)
+        #self.farcnn = fasterrcnn_resnet50_fpn(pretrained_backbone=False, num_classes=1)
+        resnet_net = torchvision.models.resnet18(pretrained=False) 
+        modules = list(resnet_net.children())[:-2] 
+        backbone = nn.Sequential(*modules) 
+        backbone.out_channels = 512
+        self.farcnn = FasterRCNN(backbone=backbone, num_classes=1)
+        #https://stackoverflow.com/questions/58362892/resnet-18-as-backbone-in-faster-r-cnn
+        self.vae.load_state_dict(torch.load("submission2_object_detection_state_dict.pt"))
+
+        self.criterion = self.loss_function
+    def loss_function(self, pred_maps, road_images, mu, logvar):
+        criterion = nn.BCELoss()
+        CE = criterion(pred_maps.squeeze(), road_images.float().squeeze())
+        KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+        return 0.9*CE + 0.1*KLD, CE, KLD
+
+    def process_batch(self, batch):
+        samples, targets, tar_sems, road_images = super(VAEFasterRCNN, self).process_batch(batch)
+        targets_farcnn = []
+        for i in range(len(samples)):
+            d = {}
+            bbs = targets[i]["bounding_box"]
+            gt_boxes = torch.zeros((bbs.shape[0], 4)).to(bbs.device)
+            for j, bb in enumerate(bbs):
+                gt_boxes[j] = torch.FloatTensor([
+                                                bb[0].min().item() * 10 + 400,
+                                                -(bb[1].max().item() * 10) + 400,
+                                                bb[0].max().item() * 10 + 400,
+                                                -(bb[1].min().item() * 10) + 400
+                                                ])
+                #logging.info("gt_box: ", gt_boxes[j])
+            d['boxes'] = gt_boxes
+            d['labels'] = torch.zeros((bbs.shape[0]), dtype=torch.int64).to(bbs.device)
+            targets_farcnn.append(d)
+        return samples, targets, tar_sems, road_images, targets_farcnn
+
+    def training_step(self, batch, batch_idx):
+        samples, targets, tar_sems, road_images, targets_farcnn = self.process_batch(batch)
+        
+        pred_maps, mu, logvar, farcnn_loss = self.forward(samples, targets_farcnn)
+        train_loss, CE, KLD = self.criterion(pred_maps, tar_sems, mu, logvar)
+
+        f_loss = 0
+        for key, value in farcnn_loss.items():
+            f_loss += value.item()
+
+        train_loss += f_loss
+        self.logger.log_metrics({"train_loss": train_loss / len(samples), 
+                                 "train_CE": CE / len(samples), 
+                                 "train_KLD": KLD / len(samples),
+                                 "train_farcnn_loss": f_loss }, 
+                                self.global_step)
+
+        return {"loss": train_loss, "n": len(samples)}
+
+    def forward(self, imgs, gt_boxes = None):
+        pred_maps, mu, logvar = self.vae(imgs)
+        if self.training:
+            rcn_out = self.farcnn(( pred_maps.unsqueeze(1) > self.threshold ).float(), gt_boxes)
+        else:
+            rcn_out = self.farcnn((pred_maps.unsqueeze(1) > self.threshold).float())
+
+        return pred_maps, mu, logvar, rcn_out
+
+    def training_epoch_end(self, outputs):
+        avg_training_loss = 0
+        n = 0
+        for out in outputs:
+            avg_training_loss += out["loss"]
+            n += out["n"]
+
+        avg_training_loss /= n
+
+        return {"log": {"avg_train_loss": avg_training_loss}}
+
+    def validation_step(self, batch, batch_idx):
+        samples, targets, tar_sems, road_images, targets_farcnn = self.process_batch(batch)
+
+        pred_maps, mu, logvar, pred_boxes = self.forward(samples)
+
+
+        threat_score = self.get_threat_score(pred_boxes, targets)
+        
+        return {"val_ts": threat_score, "n": len(samples) }
+
+    def validation_epoch_end(self, outputs):
+        avg_val_ts = 0
+        n = 0
+        for out in outputs:
+            avg_val_ts += out["val_ts"]
+            n += out["n"]
+
+        if n > 0:
+            avg_val_ts /= n
+        else:
+            avg_val_ts = 0
+
+        return {"val_ts": avg_val_ts, 
+                "log": {"avg_val_ts": avg_val_ts}, 
+                "progress_bar": {"avg_val_ts": avg_val_ts}}
+
+    def get_threat_score(self, pred_boxes,targets):
+        threat_score = 0
+        for preds, target in zip(pred_boxes, targets):
+            bbs_pred = preds["boxes"]
+            if bbs_pred.shape[0] > 0:
+                actual_boxes = torch.zeros((bbs_pred.shape[0], 2,4 ))
+                for i, bb in enumerate(bbs_pred):
+                    x_min, x_max = (bb[0] - 400) / 10, (bb[2] - 400) / 10
+                    y_min, y_max = -(bb[1] - 400) / 10, -(bb[3] - 400) / 10
+                    actual_boxes[i] = torch.FloatTensor([ [x_max, x_max, x_min, x_min],
+                                                        y_max, y_min, y_max, y_min ])
+                logging.info("Predicted boxes:", actual_boxes)
+                logging.info("True boxes: ", target["bounding_box"] )
+            else:
+                actual_boxes = torch.zeros((1, 2,4 ))
+                
+            ts_road_map = compute_ats_bounding_boxes(actual_boxes.cpu(), target["bounding_box"].cpu())
+            threat_score += ts_road_map
+
+        return threat_score
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(list(self.vae.parameters()) + list(self.farcnn.parameters()), lr=self.learning_rate, weight_decay=self.weight_decay)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.97)
+
+        return [optimizer], [scheduler]
