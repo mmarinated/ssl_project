@@ -126,6 +126,28 @@ class ProcessSegmentationMaps:
         return torch.stack(splitted_bbs_list)
     
 ###
+# Baseline for cars
+###
+def get_baseline_raw_bbs(in_bb_space=False):
+    """ returns grid_bbs_k24"""
+    grid_bbs = []
+
+    len_x, len_y = 50., 25.
+    offset_x, from_y, to_y = 20., 420., 440 
+    for x_start in np.arange(offset_x, 800 - offset_x, len_x):
+        for y_start in np.arange(from_y, to_y, len_y):
+            bb_24 = torch.Tensor([
+                [x_start + len_x, x_start + len_x, x_start, x_start],
+                [y_start + len_y, y_start, y_start + len_y, y_start],
+            ])
+            grid_bbs.append(bb_24)
+
+    grid_bbs_k24 = torch.stack(grid_bbs)
+    if in_bb_space:
+        grid_bbs_k24 = convert_to_bb_space(grid_bbs_k24, axis=-2)
+    return grid_bbs_k24
+    
+###
 # Generate data for experiments
 ###
 
