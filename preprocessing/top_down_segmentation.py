@@ -10,6 +10,7 @@ from torchvision.utils import save_image
 
 import cv2
 from ssl_project.data_loaders.data_helper import UnlabeledDataset, LabeledDataset
+from ssl_project.perspective_transform.projecting import ProjectionToBEV
 
 LINE_VALUE = 0.1111
 EGO_TYPES = np.array([LINE_VALUE, 0.5019608, 0.827451 ,  0.98039216, 1.       ], dtype=np.float32)
@@ -27,8 +28,10 @@ xy_N2 = np.vstack((x.ravel(), y.ravel())).T
 
 
 def create_warped_glued_photos(prefix="WARPED_3WW_", n_jobs=8, slc=slice(None), debug=False):
+    """
+    Generates and saves glued warped photos using ProjectionToBEV.
+    """
 #     TMP = []
-    
     def _save_warped(idx):
         labeled_trainset = LabeledDataset()
         scene_id, sample_id, path = labeled_trainset._get_ids_and_path(idx)
@@ -40,7 +43,7 @@ def create_warped_glued_photos(prefix="WARPED_3WW_", n_jobs=8, slc=slice(None), 
 #         TMP.append((idx, f"{path}/{prefix}top_down_segm.png"))
 
     labeled_trainset = LabeledDataset()
-
+    proj = ProjectionToBEV()
     if debug:
         for idx in range(len(labeled_trainset))[slc]:
             _save_warped(idx)

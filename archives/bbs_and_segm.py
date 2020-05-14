@@ -1,9 +1,23 @@
-import cv2
-import torch
-import numpy as np
+
+
+def bounding_boxes_to_segmentation(full_width, full_height, scale, bounding_boxes, categories):
+    out = torch.zeros((full_height, full_width), dtype=torch.long)
+    
+    ind = np.indices((full_height, full_width))
+    ind[0] = ind[0] - full_height / 2
+    ind[1] = ind[1] - full_width / 2
+    ind = np.moveaxis(ind, 0, 2)
+    for i, b in enumerate(bounding_boxes.detach().data.numpy()):
+        p = Path([b[:,0]*scale,b[:,1]*scale,b[:,3]*scale,b[:,2]*scale])
+        g = p.contains_points(ind.reshape(full_width*full_height,2))
+        g = np.flip(g.reshape(full_height, full_width), axis=1).T
+        g = g.copy()
+        out[g] = 1
+
+    return out
 
 def get_bounding_boxes_from_seg(segment_tensor, scale, full_height, full_width):
-    _, contours, _ = cv2.findContours(to_np(segment_tensor).astype(np.int32), cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(to_np(segment_tensor).astype(np.int32), cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_SIMPLE)
 
     contours_poly = [None]*len(contours)
     boundRect = [None]*len(contours)
@@ -27,13 +41,7 @@ def get_bounding_boxes_from_seg(segment_tensor, scale, full_height, full_width):
     for i in range(len(boundRect)):
         if ( ( boundRect[i][0][0] - boundRect[i][2][0] ) > 1) and (( boundRect[i][0][1] - boundRect[i][1][1] )>1):
             filteredBoundRect.append(boundRect[i])
-    del boundRect
-    del contours_poly
-    del _
     if len(filteredBoundRect) > 0:
         return torch.FloatTensor(filteredBoundRect).permute(0,2,1)
     else:
         return torch.zeros((1,2,4))
-    
-def to_np(x):
-    return x.detach().cpu().data.squeeze().numpy()
