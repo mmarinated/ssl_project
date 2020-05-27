@@ -22,27 +22,18 @@ Use `generate_labels.py` to generate
 - road mask
 - warped and glued photos
 
-### Road Layout Prediction
-Refer to road_layout_prediction/ for code used to train and test road layout prediction models.  
 
-**Contents**:<br>
-- road_layout_prediction.ipynb - Main notebook, Training & Evaluation<br>
-- modelszoo.py - Model Architectures and Loss functions<br>
+### Road Layout Prediction
+Refer to `road_layout_prediction/` for code used to train and test road layout prediction models. 
+- Main notebook, Training & Evaluation: `road_layout_prediction.ipynb`<br>
+- Model Architectures and Loss functions: `modelzoo.py`<br>
 
 
 ### Bounding Boxes Prediction
-**Libraries used**<br>
-- [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
-- [FastAI](https://github.com/fastai/fastai)
-- [Kornia](https://kornia.github.io/)
-- [OpenCV](https://opencv.org/)
-
-**Code**<br>
-- Folder vehicle_layout_predictions
-  - model_zoo.py - Model architectures used
-  - pl_modules.py - Pytorch lightning modules
-  - train.py - Example training code
-- Notebook fastai_final_for_cars.ipynb
+Refer to `vehicle_layout_predictions/` for preprocessing, modeling and postprocessing.
+- Image warping and glueing (OpenCV, Kornia): `preprocessing/`
+- U-Net model (fastai): `notebooks/fastai_final_for_cars.ipynb`
+- Converting segmentation map to bounding boxes coordinates (OpenCV): `postprocessing/`
 
 
 ### Self-supervised learning (tried but didn't use in final models)
@@ -50,6 +41,12 @@ Refer to road_layout_prediction/ for code used to train and test road layout pre
 - Contrastive learning, SimCLR: [ssl_ideas/simclr](ssl_ideas/simclr)
 
 ---
+Libraries used<br>
+- [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
+- [FastAI](https://github.com/fastai/fastai)
+- [Kornia](https://kornia.github.io/)
+- [OpenCV](https://opencv.org/)
+
 Parts of code sourced from:
 
 - https://github.com/Chenyang-Lu/mono-semantic-occupancy<br>
