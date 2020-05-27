@@ -1,7 +1,5 @@
-import torchvision
+"""implements scene (group) splitting"""
 
-
-import numpy as np
 from ssl_project.constants import *
 from ssl_project.paths import *
 from ssl_project.utils import TRANSFORM

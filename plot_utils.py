@@ -65,3 +65,20 @@ def plot_bb(road_image, target_b, b_slc=slice(None), color=None, axis=None):
     
     for bb, typ in np.array(bb_and_category)[b_slc]:
         draw_box(axis, bb, color=(color_list[typ] if color is None else color))
+
+
+def draw_box(ax, corners, color):
+    """description"""
+    try:
+        point_squence = torch.stack([corners[:, 0], corners[:, 1], corners[:, 3], corners[:, 2], corners[:, 0]])
+    except:
+        point_squence = np.vstack([corners[:, 0], corners[:, 1], corners[:, 3], corners[:, 2], corners[:, 0]])
+
+    # the corners are in meter and time 10 will convert them in pixels
+    # Add 400, since the center of the image is at pixel (400, 400)
+    # The negative sign is because the y axis is reversed for matplotlib
+    ax.plot(point_squence.T[0] * 10 + 400, -point_squence.T[1] * 10 + 400, color=color)
+
+
+
+

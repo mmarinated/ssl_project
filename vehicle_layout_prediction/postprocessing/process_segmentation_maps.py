@@ -2,61 +2,8 @@ import torch
 import numpy as np
 import random
 import cv2
-
-###
-# Util funcs
-###
-    
-def to_np(x):
-    return x.detach().cpu().data.numpy()
-
-def my_transpose(arr, axis_1, axis_2):
-    """works both for pytorch and numpy"""
-    try:
-        return arr.transpose(axis_1, axis_2)
-    except:
-        return arr.swapaxes(axis_1, axis_2)
-    
-def my_copy(arr):
-    """works both for pytorch and numpy"""
-    try:
-        return arr.clone()
-    except:
-        return arr.copy()
-
-def convert_to_bb_space(points_a2, axis=-1):
-    """
-    a: 
-        any shape
-    axis: 
-        axis of dim=2 -- (x, y) 
-    """
-    assert points_a2.shape[axis] == 2, f"axis={axis} should have size 2: (x, y)"
-    points_a2 = my_transpose(my_copy(points_a2), axis, -1)
-    
-    points_a2[..., 1] = 800 - points_a2[..., 1]
-    ans_a2 = (points_a2 - 400) / 10
-    
-    return my_transpose(ans_a2, axis, -1)
-
-def convert_from_bb_space(points_a2, axis=-1):
-    """
-    a: 
-        any shape
-    axis: 
-        axis of dim=2 -- (x, y) 
-    """
-    assert points_a2.shape[axis] == 2, f"axis={axis} should have size 2: (x, y)"
-    points_a2 = my_transpose(my_copy(points_a2), axis, -1)
-        
-    points_a2 = points_a2 * 10 + 400
-    points_a2[..., 1] = 800 - points_a2[..., 1]
-    
-    return my_transpose(points_a2, axis, -1)
-    
-###
-# Process segmentation maps as bounding boxes
-###
+from ssl_project.utils import to_np
+from .utils import convert_from_bb_space, convert_to_bb_space
 
 class ProcessSegmentationMaps:
     def __init__(self, 
@@ -124,55 +71,3 @@ class ProcessSegmentationMaps:
             splitted_bbs_list.append(cur_bb_24)
 
         return torch.stack(splitted_bbs_list)
-    
-###
-# Baseline for cars
-###
-def get_baseline_raw_bbs(in_bb_space=False):
-    """ returns grid_bbs_k24"""
-    grid_bbs = []
-
-    len_x, len_y = 50., 25.
-    offset_x, from_y, to_y = 20., 420., 440 
-    for x_start in np.arange(offset_x, 800 - offset_x, len_x):
-        for y_start in np.arange(from_y, to_y, len_y):
-            bb_24 = torch.Tensor([
-                [x_start + len_x, x_start + len_x, x_start, x_start],
-                [y_start + len_y, y_start, y_start + len_y, y_start],
-            ])
-            grid_bbs.append(bb_24)
-
-    grid_bbs_k24 = torch.stack(grid_bbs)
-    if in_bb_space:
-        grid_bbs_k24 = convert_to_bb_space(grid_bbs_k24, axis=-2)
-    return grid_bbs_k24
-    
-###
-# Generate data for experiments
-###
-
-def _generate_random_bbs_of_fixed_car_size(k, size_xy=(40, 20)):
-    """
-    returns: random_bbs_k24
-    """
-    random_k2 = torch.Tensor(np.random.randint(0, 800, size=(k, 2)).astype(float))
-    random_bbs_k24 = torch.zeros(k, 2, 4)
-    random_bbs_k24 += random_k2[..., None]
-
-    # shift_24 = torch.Tensor(np.random.randint(0, 40, size=(2, 4)).astype(float))
-    shift_24 = torch.Tensor([
-        [0, 0, -size_xy[0], -size_xy[0]],
-        [0, -size_xy[1], 0, -size_xy[1]]
-    ]).float()
-    random_bbs_k24 += shift_24[None]
-    return random_bbs_k24
-
-def generate_random_bbs(k):
-    """
-    returns: random_bbs_k24
-    """
-    random_bbs_k24 = []
-    for _ in range(k):
-        x, y = random.randint(2, 200), random.randint(2, 20)
-        random_bbs_k24.append(_generate_random_bbs_of_fixed_car_size(1, (x, y)))
-    return torch.cat(random_bbs_k24)
